@@ -1,0 +1,11 @@
+[package]
+name = "router"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+single-hyphen-option-names = []
+eq-separator = []
+
+[dependencies]
+tree-pack = {path = "/home/slanden/Projects/tree-pack"}
