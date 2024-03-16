@@ -5,42 +5,92 @@
 /// * **single-hyphen-option-names** -
 ///   Changes options to expect a single "-" prefix
 ///   instead of "--", and short options are disabled
-mod uri;
-use {
-    std::{io, ops::Range},
-    tree_pack::TreePack,
-    uri::*,
-};
+mod builder;
+// mod chatgpt;
+mod doc;
+// mod uri;
+use std::{ffi::OsString, io, ops::Range, str::FromStr};
+pub use {builder::*, doc::*, opt_map::optmap};
 
 pub type Action = fn(c: Context) -> io::Result<()>;
 
-pub enum RouteKind {
-    CLI,
-    URL,
+#[derive(Clone, Copy)]
+pub enum OptGroupRules {
+    AnyOf,
+    OneOf,
+    Required,
 }
 
+#[derive(Clone, Copy)]
+pub struct TreeNode {
+    child_span: u16,
+    parent: u16,
+}
 pub struct Router {
-    pub tree: TreePack,
-    pub segments: &'static [Seg],
+    // Decision:
+    // Couldn't use a const TreePack because `SIZE` in
+    // `const r: Router<SIZE> = router!(O, C);` had to
+    // be known by the user
+    pub tree: &'static [TreeNode],
+    pub segments: &'static [Segment],
     pub actions: &'static [Action],
-    // How many times the option was found
-    // option_occurrences: &mut [u8],
+    // Bitmask: exclusive, required, and cascades bools
+    // The u8s act as `OptGroupRules`, but are stored
+    // as u8s to avoid casting at runtime
+    pub opt_group_rules: &'static [u8],
+    // List of all commands' groups; the commands themselves
+    // hold ranges into this
+    pub opt_groups: &'static [&'static [u16]],
     pub options: &'static [Opt],
     pub short_option_mappers: &'static [(u16, char)],
     pub names: &'static [&'static str],
+    pub summaries: &'static [&'static str],
+    pub doc: Option<fn(c: &Context) -> String>,
+    pub help_opt_index: Option<u16>,
+}
+impl Router {
+    pub fn run(&self) -> io::Result<()> {
+        let c = parse_cli_route(self, std::env::args_os().skip(1))?;
+
+        match self.help_opt_index {
+            Some(i) if c.option_occurrences[i as usize] > 0 => {
+                Ok(println!(
+                    "{}",
+                    match c.router.doc {
+                        Some(f) => f(&c),
+                        _ => cli_doc(&c),
+                    }
+                ))
+            }
+            _ => self.actions[c.selected as usize](c),
+        }
+    }
+    #[inline(always)]
+    pub fn parse(
+        &self,
+        args: impl IntoIterator<Item = OsString>,
+    ) -> io::Result<Context> {
+        parse_cli_route(self, args)
+    }
 }
 /// Things needed at runtime for the segment (summary stored separately)
-pub struct Seg {
-    // action: u8,
-    /// First bit(s) tell whether this segment has multiple
-    /// groups. The next bits are for an offset, from the index
-    /// indicating how many groups there are. The remaining bits
-    /// are for the index.
+#[derive(Debug, Clone, Copy)]
+pub struct Segment {
+    operands: u16,
+    /// First 4 bits specify a length of groups as an offset,
+    /// from the index. The remaining 12 bits are for the
+    /// index.
+    /// This means a `Segment` can have up to 15 option
+    /// groups, and the total number of groups for the
+    /// `Router` cannot exceed 8,190.
+    ///
+    /// Will be 0 if it has no groups
     pub opt_groups: u16,
     /// An index into the shared list of names
     pub name: u16,
 }
 /// Used during parsing to determine if it needs to be cached
+#[derive(Debug)]
 pub enum OptArgKind {
     /// The option has no option-argument
     KeyOnly,
@@ -53,470 +103,535 @@ pub enum OptArgKind {
     Multiple,
 }
 /// Holds data necessary to map a parsed argument to an option
+#[derive(Debug)]
 pub struct Opt {
-    pub kind: OptArgKind,
     /// An index into the shared list of names
     pub name: u16,
+    pub kind: OptArgKind,
 }
-pub struct Context {
-    selected: u16,
-    pub option_occurrences: Vec<u8>,
+pub struct Context<'a> {
+    // The selected `Segment`'s operands
+    operands: Vec<OsString>,
     // Raw args, and operands will be attached to the
     // end
-    pub saved_args: Vec<String>,
-    // Index to options and index to saved_args
+    pub saved_args: Vec<OsString>,
+    // Index to options and index to either saved_args
+    // or arg_ranges if the option kind is `Multiple`
     pub option_args: Vec<(u16, u16)>,
     // For options that expect multiple args.
     // When there are multiple args for an option, they
     // should appear next to each other in `saved_args`
     pub arg_ranges: Vec<Range<u16>>,
+    // How many times the option was found
+    pub option_occurrences: Vec<u8>,
+    pub router: &'a Router,
+    pub selected: u16,
+    /// Where operands end and args after a terminator begin
+    operands_end: u16,
+    path_params: u8,
 }
+impl<'a> Context<'a> {
+    #[inline]
+    pub fn operands(&self) -> &[OsString] {
+        &self.operands
+            [self.path_params as usize..self.operands_end as usize]
+    }
+    #[inline]
+    pub fn path_params(&self) -> &[OsString] {
+        &self.operands[..self.path_params as usize]
+    }
+    #[inline]
+    pub fn terminated_args(&self) -> &[OsString] {
+        &self.operands[self.operands_end as usize..]
+    }
+    pub fn opt<T: FromStr>(
+        &self,
+        option: impl Into<usize> + Copy,
+    ) -> io::Result<Option<Vec<T>>> {
+        if self.option_occurrences[option.into()] > 0 {
+            if let OptArgKind::KeyOnly =
+                self.router.options[option.into()].kind
+            {
+                return Ok(Some(Vec::new()));
+            }
 
+            let mut r = self
+                .option_args
+                .iter()
+                .find(|(o, _)| *o as usize == option.into())
+                // Unwrap should be safe because non-KeyOnly options have values,
+                // and their occurrence was already checked
+                .unwrap()
+                .1 as usize..0;
+
+            match self.router.options[option.into()].kind {
+                OptArgKind::Multiple => {
+                    r.end = self.arg_ranges[r.start].end as usize;
+                    r.start = self.arg_ranges[r.start].start as usize;
+                }
+                _ => {
+                    r.end = r.start + 1;
+                }
+            };
+            let mut args = Vec::with_capacity(r.len());
+            return self.saved_args[r]
+                .iter()
+                .try_for_each(|arg| {
+                    arg.to_str()
+                        .ok_or(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "",
+                        ))
+                        .and_then(|a| {
+                            a.parse::<T>()
+                                .map_err(|_| {
+                                    io::Error::new(
+                                        io::ErrorKind::InvalidData,
+                                        "",
+                                    )
+                                })
+                                .and_then(|t| Ok(args.push(t)))
+                        })
+                })
+                .and_then(|_| Ok(Some(args)));
+        }
+        Ok(None)
+    }
+}
 fn add_found_option(
     index: usize,
     options: &[Opt],
     c: &mut Context,
-    next_arg: Option<String>,
+    next_arg: Option<OsString>,
 ) -> io::Result<()> {
-    c.option_occurrences[index] += 1;
     next_arg
         // Missing option-argument
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))
         .and_then(|val| {
-            if let OptArgKind::Multiple = options[index].kind {
-                // Find previous occurrence for this option
-                match c
-                    .option_args
+            match (
+                c.option_args
                     .iter()
-                    .position(|(saved_opt, _)| *saved_opt == index as u16)
-                {
-                    Some(found) => {
-                        // Option was given before
-                        if c.arg_ranges[c.option_args[found].1 as usize].end
-                            >= c.saved_args.len() as u16
-                        {
-                            c.saved_args.push(val);
-                        } else {
-                            c.saved_args.insert(
-                                c.arg_ranges[c.option_args[found].1 as usize].end as usize,
-                                val,
-                            );
-                            c.arg_ranges[c.option_args[found].1 as usize].end += 1;
-                            // Adjust options found after this
-                            let mut i = c.arg_ranges[c.option_args[found].1 as usize].end as usize;
-                            while i < c.option_args.len() {
-                                match options[c.option_args[i].0 as usize].kind {
-                                    OptArgKind::Single => {
-                                        c.option_args[i].1 += 1;
-                                    }
-                                    OptArgKind::Multiple => {
-                                        c.arg_ranges[c.option_args[i].0 as usize].start += 1;
-                                        c.arg_ranges[c.option_args[i].0 as usize].end += 1;
-                                    }
-                                    _ => (),
-                                }
-                                i += 1;
-                            }
-                        }
-                    }
-                    _ => {
-                        // Option not given before
-                        c.option_args
-                            .push((index as u16, c.arg_ranges.len() as u16));
-                        c.arg_ranges
-                            .push(c.saved_args.len() as u16..(c.saved_args.len() + 1) as u16);
+                    .position(|(saved_opt, _)| *saved_opt == index as u16),
+                &options[index].kind,
+            ) {
+                (Some(found), OptArgKind::Multiple) => {
+                    // Option was given before
+
+                    if c.arg_ranges[c.option_args[found].1 as usize].end
+                        == c.saved_args.len() as u16
+                    {
                         c.saved_args.push(val);
+                        c.arg_ranges[c.option_args[found].1 as usize]
+                            .end += 1;
+                        return Ok(());
+                    }
+                    // Adjust options found after this
+                    let mut i = c.arg_ranges
+                        [c.option_args[found].1 as usize]
+                        .end as usize;
+
+                    c.saved_args.insert(i, val);
+                    c.arg_ranges[c.option_args[found].1 as usize].end += 1;
+
+                    while i < c.option_args.len() {
+                        match options[c.option_args[i].0 as usize].kind {
+                            OptArgKind::Single => {
+                                c.option_args[i].1 += 1;
+                            }
+                            OptArgKind::Multiple => {
+                                c.arg_ranges
+                                    [c.option_args[i].1 as usize]
+                                    .start += 1;
+                                c.arg_ranges
+                                    [c.option_args[i].1 as usize]
+                                    .end += 1;
+                            }
+                            _ => (),
+                        }
+                        i += 1;
                     }
                 }
-            } else {
-                c.option_args
-                    .push((index as u16, c.saved_args.len() as u16));
-                c.saved_args.push(val);
+                (None, OptArgKind::Multiple) => {
+                    // Option not given before
+                    c.option_args
+                        .push((index as u16, c.arg_ranges.len() as u16));
+                    c.arg_ranges.push(
+                        c.saved_args.len() as u16
+                            ..(c.saved_args.len() + 1) as u16,
+                    );
+                    c.saved_args.push(val);
+                }
+                (Some(found), _) => {
+                    c.saved_args[c.option_args[found].1 as usize] = val;
+                }
+                _ => {
+                    c.option_args
+                        .push((index as u16, c.saved_args.len() as u16));
+                    c.saved_args.push(val);
+                }
             }
             Ok(())
         })
 }
 
-// #[inline]
-// fn set_option_if_found(
-//     c: &mut Context,
-//     arg: &str,
-//     next_arg: Option<String>,
-//     options: &[Opt],
-//     names: &[&str],
-// ) -> Option<io::Result<()>> {
-//     options
-//         .iter()
-//         .position(|mapper| names[mapper.name as usize] == arg)
-//         .and_then(|o| Some(add_found_option(o, options, c, next_arg)))
-// }
-
 /// Find the chunk of code to run, it's options, and
 /// it's operands
 ///
 /// Currently, unrecognized options are ignored
-pub fn parse_route(
-    // tree: &TreePack,
-    // segments: &[Seg],
-    // // How many times the option was found
-    // // option_occurrences: &mut [u8],
-    // options: &[Opt],
-    // short_option_mappers: &[(u16, char)],
-    // names: &[&str],
+pub fn parse_cli_route(
     router: &Router,
-    kind: RouteKind,
-    args: impl IntoIterator<Item = String>,
+    args: impl IntoIterator<Item = OsString>,
 ) -> io::Result<Context> {
     let mut args = args.into_iter();
     let mut c = Context {
-        selected: 0,
-        option_occurrences: vec![0; router.options.len()],
+        operands: Vec::new(),
         saved_args: Vec::with_capacity(args.size_hint().0),
         option_args: Vec::<(u16, u16)>::with_capacity(args.size_hint().0),
         arg_ranges: Vec::<Range<u16>>::new(),
+        option_occurrences: vec![0; router.options.len()],
+        router,
+        selected: 0,
+        operands_end: 0,
+        // The index where path params end and operands
+        // begin, indicating how many path params were
+        // found
+        path_params: 0,
     };
-    // Since the first arg, the name of the
-    // program, is always skipped we don't
-    // need to match on it
+    // Used to validate option groups since key-only options
+    // don't add to `option_args`
+    let mut options_found = 0u16;
+    // Since the first arg, the name of the program,
+    // is always skipped we don't need to match on it
     let mut tree_index = 1;
-    let mut terminated = false;
 
-    match kind {
-        RouteKind::CLI => {
-            // TODO: Options can be in the form of "-key=val"
-            // let mut equal_sign = 0;
-            while let Some(arg) = args.next() {
-                if terminated {
-                    c.saved_args.push(arg);
-                    continue;
-                }
-                if arg.starts_with('-') {
-                    // Consider moving this down to the below features
-                    // since it's a more rare case
-                    if arg.len() == 1 {
-                        // Special
-                    }
-                    let mut chars = arg.chars().skip(1).peekable();
-
-                    // Options
-                    // Unwrap safe because we already checked this index above
-                    if *chars.peek().unwrap() == '-' {
-                        if arg.len() == 2 {
-                            terminated = true;
-                            continue;
-                        }
-                        // Long
-
-                        #[cfg(feature = "eq-separator")]
-                        let key_val = match arg.find('=') {
-                            // Decision:
-                            // We duplicate the range `start` logic since
-                            // the resulting `RangeFrom` expression has less
-                            // instructions than a `Range` expression
-                            Some(eq) => (
-                                &arg[{
-                                    #[cfg(feature = "single-hyphen-option-names")]
-                                    {
-                                        1
-                                    }
-                                    #[cfg(not(feature = "single-hyphen-option-names"))]
-                                    {
-                                        2
-                                    }
-                                }..eq],
-                                Some(eq),
-                            ),
-                            _ => (
-                                &arg[{
-                                    #[cfg(feature = "single-hyphen-option-names")]
-                                    {
-                                        1
-                                    }
-                                    #[cfg(not(feature = "single-hyphen-option-names"))]
-                                    {
-                                        2
-                                    }
-                                }..],
-                                None,
-                            ),
-                        };
-                        if let Some(op) = router.options.iter().position(|mapper| {
-                            router.names[mapper.name as usize] == {
-                                #[cfg(feature = "eq-separator")]
-                                {
-                                    key_val.0
-                                }
-                                #[cfg(not(feature = "eq-separator"))]
-                                {
-                                    &arg[{
-                                        #[cfg(feature = "single-hyphen-option-names")]
-                                        {
-                                            1
-                                        }
-                                        #[cfg(not(feature = "single-hyphen-option-names"))]
-                                        {
-                                            2
-                                        }
-                                    }..]
-                                }
-                            }
-                        }) {
-                            // Found
-                            if let OptArgKind::KeyOnly = router.options[op].kind {
-                                // Or, store in `option_args` as (o, 0)
-                                c.option_occurrences[op] += 1;
-                            } else {
-                                add_found_option(
-                                    op,
-                                    router.options,
-                                    &mut c,
-                                    #[cfg(feature = "eq-separator")]
-                                    key_val
-                                        .1
-                                        .and_then(|pos| Some(arg[pos + 1..].to_owned()))
-                                        .or_else(|| args.next()),
-                                    #[cfg(not(feature = "eq-separator"))]
-                                    args.next(),
-                                )?
-                            }
-                        } else {
-                            // Not found
-                        }
-                    } else {
-                        #[cfg(feature = "eq-separator")]
-                        let key_val = match arg.find('=') {
-                            Some(eq) => (&arg[1..eq], Some(eq)),
-                            _ => (&arg[1..], None),
-                        };
-                        #[cfg(feature = "single-hyphen-option-names")]
-                        if let Some(op) = router.options.iter().position(|mapper| {
-                            router.names[mapper.name as usize] == {
-                                #[cfg(feature = "eq-separator")]
-                                {
-                                    key_val.0
-                                }
-                                #[cfg(not(feature = "eq-separator"))]
-                                {
-                                    &arg[1..]
-                                }
-                            }
-                        }) {
-                            // Found
-                            if let OptArgKind::KeyOnly = router.options[op].kind {
-                                // Or, store in `option_args` as (o, 0)
-                                c.option_occurrences[op] += 1;
-                            } else {
-                                add_found_option(
-                                    op,
-                                    router.options,
-                                    &mut c,
-                                    #[cfg(feature = "eq-separator")]
-                                    key_val
-                                        .1
-                                        .and_then(|pos| Some(arg[pos + 1..].to_owned()))
-                                        .or_else(|| args.next()),
-                                    #[cfg(not(feature = "eq-separator"))]
-                                    args.next(),
-                                )?
-                            }
-                            continue;
-                        }
-                        // #[cfg(feature = "single-hyphen-option-names")]
-                        // if let Some(res) = set_option_if_found(
-                        //     &mut c,
-                        //     &arg[1..],
-                        //     &mut args,
-                        //     router.options,
-                        //     router.names,
-                        // ) {
-                        //     res?;
-                        //     continue;
-                        // }
-
-                        // Shorts
-                        for ch in chars {
-                            if let Some(o) = router
-                                .short_option_mappers
-                                .iter()
-                                .position(|mapper| mapper.1 == ch)
-                            {
-                                if let OptArgKind::KeyOnly = router.options[o].kind {
-                                    // Or, store in `option_args` as (o, 0)
-                                    c.option_occurrences[o] += 1;
-                                } else
-                                // +2 for '-' + character
-                                if arg.len() > 2 {
-                                    // Found an option that expects an option-arg,
-                                    // which maybe shouldn't be allowed
-                                    return Err(io::Error::from(io::ErrorKind::InvalidInput));
-                                } else {
-                                    add_found_option(
-                                        router.short_option_mappers[o].0 as usize,
-                                        router.options,
-                                        &mut c,
-                                        args.next(),
-                                    )?;
-                                }
-                            } else {
-                                // Option not found
-                            }
-                        }
-                    }
-                    continue;
-                }
-                while tree_index
-                    < c.selected
-                        + router.tree.descendents_len(c.selected as usize).unwrap() as u16
-                        + 1
+    while let Some(arg) = args.next() {
+        let checked_arg = match arg.to_str() {
+            Some(a) => a,
+            _ => {
+                // Won't match any segment or option,
+                // since they're all UTF-8, so it can
+                // only be an operand
+                if router.segments[c.selected as usize].operands
+                    != (c.operands.len() - c.path_params as usize) as u16
                 {
-                    if router.names[router.segments[tree_index as usize].name as usize]
-                        .starts_with(':')
-                        || arg == router.names[router.segments[tree_index as usize].name as usize]
-                    {
-                        c.selected = tree_index;
-                        tree_index += 1;
+                    c.operands.push(arg);
+                } else
+                // Either an option with invalid UTF-8 or an unrecognized
+                // segment. Valid options will later obtain option-args
+                // without checking UTF-8
+
+                // Will always have bytes because an empty string
+                // would've passed UTF-8 checks
+                if arg.as_encoded_bytes()[0] == b'-' {
+                    // Invalid option
+                } else {
+                    // Invalid segment
+                }
+                continue;
+            }
+        };
+
+        if checked_arg.starts_with('-') {
+            let mut chars = checked_arg.chars().skip(1).peekable();
+
+            // Options
+            // Unwrap safe because we already checked this index above
+            match chars.peek() {
+                None => {
+                    // Special '-' stdin
+                    c.operands.push(arg);
+                }
+                Some('-') => {
+                    if checked_arg.len() == 2 {
+                        c.operands_end = c.operands.len() as u16;
+                        c.operands.extend(args);
                         break;
                     }
-                    // Skip to next sibling segment
-                    tree_index +=
-                        router.tree.descendents_len(tree_index as usize).unwrap() as u16 + 1
-                }
-            }
-        }
-        RouteKind::URL => {
-            if let Some(route) = args.next() {
-                let route_bytes = route.as_bytes();
-                let lengths = parse_uri_scheme_and_authority(route_bytes);
-                let mut index = lengths.scheme_len as usize + "://".len();
-                if lengths.user_len > 0 {
-                    // +1 for the '@'
-                    index += lengths.user_len as usize + 1;
-                }
-                // Assumes there will always be a Host component
-                index += lengths.host_len as usize;
-                if lengths.port_len > 0 {
-                    // +1 for the ':', and another because we've either
-                    // landed on '/' before, or there was no path
-                    index += lengths.port_len as usize + 1;
-                }
-                if index == route_bytes.len() {
-                    return Ok(c);
-                }
-                if route_bytes[index] == b'/' {
-                    index += 1;
-                }
+                    // Long
 
-                let mut start = index;
-                // let mut dividers = route[index..].match_indices(['/', '?']);
-                while start < route_bytes.len() {
-                    if index == route_bytes.len()
-                        || route_bytes[index] == b'/'
-                        || route_bytes[index] == b'?'
-                        || route_bytes[index] == b'#'
-                    {
-                        if start == index {
-                            break;
-                        }
-                        let arg = if index == route_bytes.len() {
-                            &route[start..]
-                        } else {
-                            &route[start..index]
-                        };
-
-                        while tree_index
-                            < c.selected
-                                + router.tree.descendents_len(c.selected as usize).unwrap() as u16
-                                + 1
-                        {
-                            if router.names[router.segments[tree_index as usize].name as usize]
-                                .starts_with(':')
-                                || arg
-                                    == router.names
-                                        [router.segments[tree_index as usize].name as usize]
-                            {
-                                c.selected = tree_index;
-                                tree_index += 1;
-                                start = index + 1;
-                                break;
+                    #[cfg(feature = "eq-separator")]
+                    let (name, eq_index) = match checked_arg.find('=') {
+                        // Decision:
+                        // We duplicate the range `start` logic since
+                        // the resulting `RangeFrom` expression has less
+                        // instructions than a `Range` expression
+                        Some(eq) => {
+                            if eq == 2 || eq == checked_arg.len() - 1 {
+                                // ! Error: invalid eq sign
                             }
-                            // Skip to next sibling segment
-                            tree_index +=
-                                router.tree.descendents_len(tree_index as usize).unwrap() as u16 + 1
+                            (
+                                &checked_arg[{
+                                    #[cfg(
+                                        feature = "single-hyphen-option-names"
+                                    )]
+                                    {
+                                        1
+                                    }
+                                    #[cfg(not(
+                                        feature = "single-hyphen-option-names"
+                                    ))]
+                                    {
+                                        2
+                                    }
+                                }
+                                    ..eq],
+                                Some(eq),
+                            )
                         }
-                        if index == route_bytes.len() {
-                            return Ok(c);
-                        }
-                        if route_bytes[index] != b'/' {
-                            break;
-                        }
-                    }
-                    index += 1;
-                }
-                index += 1;
-                start = index;
-                let mut equal_sign = 0;
-                while index < route_bytes.len() {
-                    match route_bytes[index] {
-                        b'&' => {
-                            if equal_sign > 0 {
-                                let opt = &route[start..start + equal_sign];
-                                // Key-value pair
-                                if let Some(o) = router
-                                    .options
-                                    .iter()
-                                    .position(|mapper| router.names[mapper.name as usize] == opt)
+                        _ => (
+                            &checked_arg[{
+                                #[cfg(
+                                    feature = "single-hyphen-option-names"
+                                )]
                                 {
-                                    c.option_occurrences[o] += 1;
-                                } else {
-                                    // Not found
+                                    1
                                 }
-                                equal_sign = 0;
-                            } else {
-                                if let Some(o) = router.options.iter().position(|mapper| {
-                                    router.names[mapper.name as usize] == &route[start..]
-                                }) {
-                                    c.option_occurrences[o] += 1;
-                                } else {
-                                    // Not found
+                                #[cfg(not(
+                                    feature = "single-hyphen-option-names"
+                                ))]
+                                {
+                                    2
                                 }
-                            }
-                            start = index + 1;
-                        }
-                        b'#' => {
-                            break;
-                        }
-                        b'=' => {
-                            equal_sign = index - start;
-                        }
-                        _ => (),
-                    }
-                    index += 1;
-                }
-                if start < route_bytes.len() {
-                    if equal_sign > 0 {
-                        let opt = &route[start..start + equal_sign];
-                        // Key-value pair
-                        if let Some(o) = router
-                            .options
-                            .iter()
-                            .position(|mapper| router.names[mapper.name as usize] == opt)
+                            }..],
+                            None,
+                        ),
+                    };
+                    #[cfg(not(feature = "eq-separator"))]
+                    let name = &checked_arg[{
+                        #[cfg(feature = "single-hyphen-option-names")]
                         {
-                            c.option_occurrences[o] += 1;
+                            1
+                        }
+                        #[cfg(not(
+                            feature = "single-hyphen-option-names"
+                        ))]
+                        {
+                            2
+                        }
+                    }..];
+
+                    if let Ok(op) =
+                        // router.options.iter().position(|mapper| {
+                        //     router.names[mapper.name as usize].as_bytes()
+                        //         [0]
+                        //         == name.as_bytes()[0]
+                        //         && router.names[mapper.name as usize]
+                        //             == name
+                        // })
+                        router.options.binary_search_by(|o| {
+                                router.names[o.name as usize].cmp(name)
+                            })
+                    {
+                        // Found
+                        if c.option_occurrences[op] == 0 {
+                            options_found += 1;
+                        }
+                        c.option_occurrences[op] += 1;
+                        if let OptArgKind::KeyOnly =
+                            router.options[op].kind
+                        {
                         } else {
-                            // Not found
+                            add_found_option(
+                                op,
+                                router.options,
+                                &mut c,
+                                #[cfg(feature = "eq-separator")]
+                                eq_index
+                                    .and_then(|pos| {
+                                        Some(checked_arg[pos + 1..].into())
+                                    })
+                                    .or_else(args.next()),
+                                #[cfg(not(feature = "eq-separator"))]
+                                args.next(),
+                            )?
                         }
                     } else {
-                        if let Some(o) = router.options.iter().position(|mapper| {
-                            router.names[mapper.name as usize] == &route[start..index]
-                        }) {
-                            c.option_occurrences[o] += 1;
+                        // Not found
+                    }
+                }
+                _ => {
+                    #[cfg(feature = "eq-separator")]
+                    let (name, eq_index) = match checked_arg.find('=') {
+                        Some(eq) => (&checked_arg[1..eq], Some(eq)),
+                        _ => (&checked_arg[1..], None),
+                    };
+                    #[cfg(all(
+                        feature = "single-hyphen-option-names",
+                        not(feature = "eq-separator"),
+                    ))]
+                    let name = &checked_arg[1..];
+                    #[cfg(feature = "single-hyphen-option-names")]
+                    if let Ok(op) =
+                        // router.options.iter().position(|mapper| {
+                        //     router.names[mapper.name as usize].as_bytes()
+                        //         [0]
+                        //         == name.as_bytes()[0]
+                        //         && router.names[mapper.name as usize]
+                        //             == name
+                        // })
+                        router.options.binary_search_by(|o| {
+                                router.names[o.name as usize].cmp(name)
+                            })
+                    {
+                        // Found
+                        if c.option_occurrences[op] == 0 {
+                            options_found += 1;
+                        }
+                        c.option_occurrences[op] += 1;
+                        if let OptArgKind::KeyOnly =
+                            router.options[op].kind
+                        {
                         } else {
-                            // Not found
+                            add_found_option(
+                                op,
+                                router.options,
+                                &mut c,
+                                #[cfg(feature = "eq-separator")]
+                                eq_index
+                                    .and_then(|pos| {
+                                        Some(checked_arg[pos + 1..].into())
+                                    })
+                                    .or_else(args.next()),
+                                #[cfg(not(feature = "eq-separator"))]
+                                args.next(),
+                            )?
+                        }
+                        continue;
+                    }
+                    // Shorts
+                    for ch in chars {
+                        if let Some(o) = router
+                            .short_option_mappers
+                            .iter()
+                            .position(|(_, mapper)| *mapper == ch)
+                        {
+                            if c.option_occurrences[o] == 0 {
+                                options_found += 1;
+                            }
+                            c.option_occurrences[o] += 1;
+                            if let OptArgKind::KeyOnly =
+                                router.options[o].kind
+                            {
+                            } else {
+                                // +2 for '-' + character
+                                if checked_arg.len() > 2 {
+                                    // Found an option that expects an option-arg,
+                                    // which maybe shouldn't be allowed in a group
+                                    return Err(io::Error::from(
+                                        io::ErrorKind::InvalidInput,
+                                    ));
+                                }
+                                add_found_option(
+                                    router.short_option_mappers[o].0
+                                        as usize,
+                                    router.options,
+                                    &mut c,
+                                    args.next(),
+                                )?;
+                            }
+                        } else {
+                            // Option not found
                         }
                     }
                 }
             }
+            continue;
         }
+
+        if router.segments[c.selected as usize].operands
+            != (c.operands.len() - c.path_params as usize) as u16
+        {
+            c.operands.push(arg);
+            continue;
+        }
+
+        while tree_index
+            < c.selected + router.tree[c.selected as usize].child_span + 1
+        {
+            if router.names
+                [router.segments[tree_index as usize].name as usize]
+                .starts_with(':')
+            {
+                c.selected = tree_index;
+                tree_index += 1;
+                c.path_params += 1;
+                c.operands.push(arg);
+                break;
+            }
+            if checked_arg
+                == router.names
+                    [router.segments[tree_index as usize].name as usize]
+            {
+                c.selected = tree_index;
+                tree_index += 1;
+                break;
+            }
+            // Skip to next sibling segment
+            tree_index += router.tree[tree_index as usize].child_span + 1
+        }
+    }
+    c.saved_args.shrink_to_fit();
+    c.option_args.shrink_to_fit();
+    c.arg_ranges.shrink_to_fit();
+
+    if c.operands_end == 0 {
+        // No terminator was found, so this wasn't set
+        c.operands_end = c.operands.len() as u16;
+    }
+
+    let groups = router.segments[c.selected as usize].opt_groups >> 12;
+    if groups == 0 {
+        return Ok(c);
+    }
+    let index = router.segments[c.selected as usize].opt_groups << 4 >> 4;
+    // println!("groups: {}, index: {}", groups, index);
+    let groups =
+        &router.opt_groups[index as usize..(index + groups) as usize];
+
+    let mut found_opt = None;
+    let mut group_options_found = 0u16;
+    for (idx, grp) in groups.iter().enumerate() {
+        for o in *grp {
+            if c.option_occurrences[*o as usize] > 0 {
+                found_opt = Some(*o);
+                group_options_found += 1;
+                if router.opt_group_rules[index as usize + idx] as u8
+                    & OptGroupRules::OneOf as u8
+                    != 0
+                {
+                    if let Some(found) = found_opt {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!(
+                              "These options are mutually exclusive: {}, {}",
+                                router.names[router.options[found as usize].name as usize],
+                                router.names[router.options[*o as usize].name as usize]
+                            )
+                        ));
+                    }
+                    continue;
+                }
+                break;
+            }
+        }
+        if found_opt.is_none()
+            && router.opt_group_rules[index as usize + idx] as u8
+                & OptGroupRules::Required as u8
+                != 0
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Missing a required option.",
+            ));
+        }
+    }
+    // TODO: This might be wrong as I hit it in benchmark app with
+    //       cargo run -- --width 43 --number 2 --number 5
+    if group_options_found != options_found {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Invalid options: {}", group_options_found),
+        ));
     }
     Ok(c)
 }
@@ -529,23 +644,15 @@ mod tests {
         ($name:literal) => {{
             #[cfg(feature = "single-hyphen-option-names")]
             {
-                String::from(concat!("-", $name))
+                OsString::from(concat!("-", $name))
             }
             #[cfg(not(feature = "single-hyphen-option-names"))]
             {
-                String::from(concat!("--", $name))
+                OsString::from(concat!("--", $name))
             }
         }};
     }
 
-    /// Make an option name that's either prefixed with one
-    /// or two hyphens, depending on if the feature's enabled
-    // const fn option_name(name: &str) -> String {
-    //     #[cfg(feature = "single-hyphen-option-names")]
-    //     return String::from_iter(["-", name]);
-    //     #[cfg(not(feature = "single-hyphen-option-names"))]
-    //     return String::from_str("--").unwrap().pu;
-    // }
     /*
       Cases:
         - runtime error: segment not found
@@ -566,50 +673,90 @@ mod tests {
         Ok(println!("path command"))
     }
 
-    fn data() -> (Router, Vec<&'static str>) {
-        // enum O {
-        //     KeyOnly = 0,
-        //     Single1,
-        //     Multi1,
-        // }
-        let mut router = Router {
-            tree: TreePack::new(),
+    fn data() -> Router {
+        Router {
+            tree: &[
+                // 1: path
+                TreeNode {
+                    child_span: 7,
+                    parent: 0,
+                },
+                // 2:   a
+                TreeNode {
+                    child_span: 2,
+                    parent: 0,
+                },
+                // 3:     a1
+                TreeNode {
+                    child_span: 0,
+                    parent: 1,
+                },
+                // 4:     a2
+                TreeNode {
+                    child_span: 0,
+                    parent: 1,
+                },
+                // 5:   b
+                TreeNode {
+                    child_span: 2,
+                    parent: 0,
+                },
+                // 6:     b1
+                TreeNode {
+                    child_span: 0,
+                    parent: 4,
+                },
+                // 7:     b2
+                TreeNode {
+                    child_span: 0,
+                    parent: 4,
+                },
+                // 8:   c
+                TreeNode {
+                    child_span: 0,
+                    parent: 0,
+                },
+            ],
             segments: &[
-                Seg {
-                    opt_groups: 0,
-                    name: 0,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 1,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 2,
-                },
-                Seg {
+                Segment {
+                    operands: 0,
                     opt_groups: 0,
                     name: 3,
                 },
-                Seg {
+                Segment {
+                    operands: 0,
                     opt_groups: 0,
                     name: 4,
                 },
-                Seg {
-                    opt_groups: 0,
+                Segment {
+                    operands: 0,
+                    opt_groups: 1 << 12,
                     name: 5,
                 },
-                Seg {
+                Segment {
+                    operands: 2,
                     opt_groups: 0,
                     name: 6,
                 },
-                Seg {
+                Segment {
+                    operands: 0,
                     opt_groups: 0,
                     name: 7,
                 },
-                Seg {
+                Segment {
+                    operands: 0,
                     opt_groups: 0,
                     name: 8,
+                },
+                Segment {
+                    operands: 0,
+                    opt_groups: 1 << 12 | 1,
+                    name: 9,
+                },
+                Segment {
+                    operands: 0,
+                    opt_groups: 0,
+                    name: 10,
                 },
             ],
             actions: &[
@@ -624,197 +771,84 @@ mod tests {
             ],
             short_option_mappers: &[(0, 'k'), (1, 's'), (2, 'm')],
             names: &[
-                "root", "path", "a", "a1", "a2", "b", "b1", "b2", "c", "key-only", "single1",
-                "multi1",
+                "key-only", "single1", "multi1", "path", "a", "a1", "a2",
+                "b", "b1", "b2", "c",
+            ],
+            summaries: &[
+                "key-only summary",
+                "single1 summary",
+                "multi1 summary",
+                "path summary",
+                "a summary",
+                "a1 summary",
+                "a2 summary",
+                "b summary",
+                "b1 summary",
+                "b2 summary",
+                "c summary",
             ],
             options: &[
                 Opt {
                     kind: OptArgKind::KeyOnly,
-                    name: 9,
+                    name: 0,
                 },
                 Opt {
                     kind: OptArgKind::Single,
-                    name: 10,
+                    name: 1,
                 },
                 Opt {
                     kind: OptArgKind::Multiple,
-                    name: 11,
+                    name: 2,
                 },
             ],
-        };
-        let summaries = vec![
-            "root summary",
-            "path summary",
-            "a summary",
-            "a1 summary",
-            "a2 summary",
-            "b summary",
-            "b1 summary",
-            "b2 summary",
-            "c summary",
-            "key-only summary",
-            "single1 summary",
-            "multi1 summary",
-        ];
-
-        router.tree.insert(0); // 1: path
-        router.tree.insert(1); // 2:   a
-        router.tree.insert(2); // 3:     a1
-        router.tree.insert(2); // 4:     a2
-        router.tree.insert(1); // 5:   b
-        router.tree.insert(5); // 6:     b1
-        router.tree.insert(5); // 7:     b2
-        router.tree.insert(1); // 8:   c
-
-        (router, summaries)
+            opt_group_rules: &[
+                OptGroupRules::AnyOf as u8,
+                OptGroupRules::Required as u8,
+            ],
+            opt_groups: &[&[1, 2], &[0]],
+            doc: None,
+            help_opt_index: None,
+        }
     }
 
-    #[test]
-    fn should_parse_a_url_route_with_no_options_or_fragment() {
-        let (router, _) = data();
-
-        // URL route with yes path, no options, no fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/path/a/a2".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 4);
-
-        // URL route with no path, no options, no fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 0);
-
-        // Doesn't exist, `index` is the last recognized segment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/path/b/b3".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 5);
-    }
-    #[test]
-    fn should_parse_a_url_route_with_options() {
-        let (router, _) = data();
-
-        // URL route with yes path, yes options, no fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/path/a/a2?single1=abc&key-only".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 4);
-        assert_eq!(c.option_occurrences, [1, 1, 0]);
-
-        // URL route with no path, yes options, no fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443?single1=0".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 0);
-        assert_eq!(c.option_occurrences, [0, 1, 0]);
-    }
-    // TODO: Figure out how a fragment fits into this segments and options concept
-    #[test]
-    fn should_parse_a_url_route_with_a_fragment() {
-        let (router, _) = data();
-
-        // URL route with no path, no options, yes fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443?#frag".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 0);
-        assert_eq!(c.option_occurrences, [0, 0, 0]);
-
-        // URL route with no path, yes options, yes fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443?key-only#frag".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 0);
-        assert_eq!(c.option_occurrences, [1, 0, 0]);
-
-        // URL route with yes path, no options, yes fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/path/a/a2#frag".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 4);
-        assert_eq!(c.option_occurrences, [0, 0, 0]);
-
-        // URL route with yes path, yes options, yes fragment
-        let c = parse_route(
-            &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/path/a/a2?key-only#frag".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 4);
-        assert_eq!(c.option_occurrences, [1, 0, 0]);
-    }
     #[test]
     fn should_parse_a_cli_route_with_no_options_or_terminator() {
-        let (router, _) = data();
+        let router = data();
 
-        let c = parse_route(
-            &router,
-            RouteKind::CLI,
-            vec!["path".to_string(), "c".to_string()],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 8);
+        let c =
+            parse_cli_route(&router, vec![OsString::from("c")]).unwrap();
+        assert_eq!(c.selected, 7);
     }
     #[test]
     fn should_parse_a_cli_route_with_options() {
-        let (router, _) = data();
+        let router = data();
 
         // * An option that expects no option-args
-        let c = parse_route(
+        let c = parse_cli_route(
             &router,
-            RouteKind::CLI,
             vec![
-                "path".to_string(),
-                "b".to_string(),
+                OsString::from("b"),
                 option_name!("key-only"),
-                "b1".to_string(),
+                OsString::from("b1"),
             ],
         )
         .unwrap();
-        assert_eq!(c.selected, 6);
+        assert_eq!(c.selected, 5);
         assert_eq!(c.option_occurrences, [1, 0, 0]);
 
         // * Ignore double-hyphon option names
         #[cfg(feature = "single-hyphen-option-names")]
         {
-            let c = parse_route(
+            let c = parse_cli_route(
                 &router,
-                RouteKind::CLI,
                 vec![
-                    "path".to_string(),
-                    "b".to_string(),
-                    "--key-only".to_string(),
-                    "b1".to_string(),
+                    OsString::from("b"),
+                    OsString::from("--key-only"),
+                    OsString::from("b1"),
                 ],
             )
             .unwrap();
-            assert_eq!(c.selected, 6);
+            assert_eq!(c.selected, 5);
             assert_eq!(c.option_occurrences, [0, 0, 0]);
         }
 
@@ -822,20 +856,18 @@ mod tests {
         // * by an '=' character
         #[cfg(feature = "eq-separator")]
         {
-            let c = parse_route(
+            let c = parse_cli_route(
                 &router,
-                RouteKind::CLI,
                 vec![
-                    "path".to_string(),
-                    "b".to_string(),
+                    OsString::from("b"),
                     option_name!("single1=val"),
-                    "b1".to_string(),
+                    OsString::from("b1"),
                 ],
             )
             .unwrap();
-            assert_eq!(c.selected, 6);
+            assert_eq!(c.selected, 5);
             assert_eq!(c.option_occurrences, [0, 1, 0]);
-            assert_eq!(c.saved_args, vec!["val".to_string()]);
+            assert_eq!(c.saved_args, vec![OsString::from("val")]);
 
             // TODO: Handle "-=" and "-=val" case
         }
@@ -844,226 +876,238 @@ mod tests {
         // * regular character
         #[cfg(not(feature = "eq-separator"))]
         {
-            let c = parse_route(
+            let c = parse_cli_route(
                 &router,
-                RouteKind::CLI,
                 vec![
-                    "path".to_string(),
-                    "b".to_string(),
+                    OsString::from("b"),
                     option_name!("cal=val"),
-                    "b1".to_string(),
+                    OsString::from("b1"),
                 ],
             )
             .unwrap();
-            assert_eq!(c.selected, 6);
+            assert_eq!(c.selected, 5);
             assert_eq!(c.option_occurrences, [0, 0, 0]);
             assert_eq!(c.saved_args.len(), 0);
         }
 
         // * Prohibit an option from clustering when it expects
         // * an option-arg
-        let c = parse_route(
+        let c = parse_cli_route(
             &router,
-            RouteKind::CLI,
             vec![
-                "path".to_string(),
-                "b".to_string(),
-                "-skm".to_string(),
-                "b1".to_string(),
+                OsString::from("b"),
+                OsString::from("-skm"),
+                OsString::from("b1"),
             ],
         );
         assert!(c.is_err());
 
         // * An option that expects an option-arg
-        let c = parse_route(
+        let c = parse_cli_route(
             &router,
-            RouteKind::CLI,
             vec![
-                "path".to_string(),
-                "b".to_string(),
+                OsString::from("b"),
                 option_name!("single1"),
-                "val".to_string(),
-                "b1".to_string(),
+                OsString::from("val"),
+                OsString::from("b1"),
             ],
         )
         .unwrap();
-        assert_eq!(c.selected, 6);
+        assert_eq!(c.selected, 5);
         assert_eq!(c.option_occurrences, [0, 1, 0]);
-        assert_eq!(c.saved_args, vec!["val".to_string()]);
+        assert_eq!(c.saved_args, vec![OsString::from("val")]);
 
         // * An option that expects an option-arg and can
         // * occur multiple times
-        let c = parse_route(
+        let c = parse_cli_route(
             &router,
-            RouteKind::CLI,
             vec![
-                "path".to_string(),
-                "b".to_string(),
+                OsString::from("b"),
                 option_name!("multi1"),
-                "val".to_string(),
-                "b1".to_string(),
+                OsString::from("val"),
+                OsString::from("b1"),
+                option_name!("single1"),
+                OsString::from("single1-val"),
                 option_name!("multi1"),
-                "val2".to_string(),
-            ],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 6);
-        assert_eq!(c.option_occurrences, [0, 0, 2]);
-        assert_eq!(c.saved_args, vec!["val".to_string(), "val2".to_string()]);
-        assert_eq!(c.arg_ranges.len(), 1);
-        assert_eq!(c.arg_ranges[0].start, 0);
-        assert_eq!(c.arg_ranges[0].end, 1);
-
-        // * Short option aliases
-        let c = parse_route(
-            &router,
-            RouteKind::CLI,
-            vec![
-                "path".to_string(),
-                "b".to_string(),
-                "-s".to_string(),
-                "val".to_string(),
-                "b1".to_string(),
-                "-k".to_string(),
-                "-k".to_string(),
-            ],
-        )
-        .unwrap();
-        assert_eq!(c.selected, 6);
-        assert_eq!(c.option_occurrences, [2, 1, 0]);
-        assert_eq!(c.saved_args, vec!["val".to_string()]);
-    }
-    #[test]
-    fn should_terminate_a_cli_route_and_store_operands() {
-        let (router, _) = data();
-
-        let c = parse_route(
-            &router,
-            RouteKind::CLI,
-            vec![
-                "path".to_string(),
-                "b".to_string(),
-                "--".to_string(),
-                "--single1".to_string(),
-                "b1".to_string(),
+                OsString::from("val2"),
             ],
         )
         .unwrap();
         assert_eq!(c.selected, 5);
+        assert_eq!(c.option_occurrences, [0, 1, 2]);
+        assert_eq!(
+            c.saved_args,
+            vec![
+                OsString::from("val"),
+                OsString::from("val2"),
+                OsString::from("single1-val")
+            ],
+        );
+        assert_eq!(c.arg_ranges.len(), 1);
+        assert_eq!(c.arg_ranges[0].start, 0);
+        assert_eq!(c.arg_ranges[0].end, 2);
+        assert_eq!(c.option_args, vec![(2, 0), (1, 2)]);
+
+        // * An option that expects an option-arg and can
+        // * replaces its first occurrence
+        let c = parse_cli_route(
+            &router,
+            vec![
+                OsString::from("b"),
+                option_name!("single1"),
+                OsString::from("single1-val"),
+                // option_name!("multi1"),
+                // OsString::from("val"),
+                OsString::from("b1"),
+                option_name!("single1"),
+                OsString::from("single1-val2"),
+                // option_name!("multi1"),
+                // OsString::from("val2"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(c.selected, 5);
+        assert_eq!(c.option_occurrences, [0, 2, 0]);
+        assert_eq!(
+            c.saved_args,
+            vec![
+                // OsString::from("val"),
+                // OsString::from("val2"),
+                OsString::from("single1-val2")
+            ],
+        );
+        assert_eq!(c.arg_ranges.len(), 0);
+        assert_eq!(c.option_args, vec![(1, 0)]);
+
+        // * Short option aliases
+        let c = parse_cli_route(
+            &router,
+            vec![
+                OsString::from("b"),
+                OsString::from("-s"),
+                OsString::from("val"),
+                OsString::from("b1"),
+                OsString::from("-k"),
+                OsString::from("-k"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(c.selected, 5);
+        assert_eq!(c.option_occurrences, [2, 1, 0]);
+        assert_eq!(c.saved_args, vec![OsString::from("val")]);
+    }
+    #[test]
+    fn should_parse_a_cli_route_with_terminator() {
+        let router = data();
+
+        let c = parse_cli_route(
+            &router,
+            vec![
+                OsString::from("b"),
+                OsString::from("--"),
+                OsString::from("--single1"),
+                OsString::from("b1"),
+            ],
+        )
+        .unwrap();
+        assert_eq!(c.selected, 4);
         assert_eq!(c.option_occurrences, [0, 0, 0]);
         assert_eq!(
             c.saved_args,
-            vec!["--single1".to_string(), "b1".to_string()]
+            vec![OsString::from("--single1"), OsString::from("b1")]
         );
     }
-    // #[test]
-    // fn should_accept_procedure_operands_in_a_cli_route(){
-
-    // }
     #[test]
-    fn should_parse_placeholder_segments() {
-        // enum O {
-        //     KeyOnly,
-        //     Single1,
-        //     Multi1,
-        // }
-        let mut router = Router {
-            tree: TreePack::new(),
-            segments: &[
-                Seg {
-                    opt_groups: 0,
-                    name: 0,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 1,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 2,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 3,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 4,
-                },
-                Seg {
-                    opt_groups: 0,
-                    name: 3,
-                },
-            ],
-            actions: &[
-                |_| Ok(println!("program help")),
-                |_| Ok(println!("built-in help")),
-                |_| Ok(println!("fun help")),
-                |_| Ok(println!("extension help")),
-                |_| Ok(println!("fun help")),
-            ],
-            options: &[
-                Opt {
-                    kind: OptArgKind::KeyOnly,
-                    name: 5,
-                },
-                Opt {
-                    kind: OptArgKind::Single,
-                    name: 6,
-                },
-                Opt {
-                    kind: OptArgKind::Multiple,
-                    name: 7,
-                },
-            ],
-            short_option_mappers: &[(0, 'a'), (1, 'b'), (2, 'c')],
-            names: &[
-                "root",
-                "program",
-                "built-in",
-                "fun",
-                ":extension",
-                /* "other-built-in", */
-                "key-only",
-                "single1",
-                "multi1",
-            ],
-        };
-        // let summaries = vec![
-        //     "root summary",
-        //     "program summary",
-        //     "built-in summary",
-        //     "fun summary",
-        //     "extension summary",
-        //     "extension fun summary",
-        //     // "other-built-in summary",
-        //     "key-only summary",
-        //     "single1 summary",
-        //     "multi1 summary",
-        // ];
-
-        router.tree.insert(0); // 1: program
-        router.tree.insert(1); // 2:   built-in
-        router.tree.insert(2); // 3:     fun
-        router.tree.insert(1); // 4:   :extension
-        router.tree.insert(4); // 5:     fun
-
-        // c.tree.insert(1); // 6:   other-built-in
-
-        let c = parse_route(
+    fn should_parse_a_cli_route_with_operands() {
+        let router = data();
+        let c = parse_cli_route(
             &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/program/built-in/fun".to_string()],
+            vec![
+                OsString::from("a"),
+                option_name!("key-only"),
+                OsString::from("a2"),
+                OsString::from("operand1"),
+                OsString::from("operand2"),
+                option_name!("multi1"),
+                OsString::from("some-multi-opt-val"),
+                option_name!("multi1"),
+                OsString::from("another-multi-opt-val"),
+                option_name!("single1"),
+                OsString::from("single-opt-val"),
+            ],
         )
         .unwrap();
         assert_eq!(c.selected, 3);
+        assert_eq!(
+            c.saved_args,
+            vec![
+                OsString::from("some-multi-opt-val"),
+                OsString::from("another-multi-opt-val"),
+                OsString::from("single-opt-val"),
+            ]
+        );
+        assert_eq!(
+            c.operands,
+            vec![OsString::from("operand1"), OsString::from("operand2")]
+        );
+    }
+    #[test]
+    fn should_validate_option_against_option_groups() {
+        let router = data();
+        // let group_count = 5;
+        // let index = 677u16;
+        // let composed = group_count << 12 | index;
 
-        let c = parse_route(
+        // println!(
+        //     "n: {}, groups: {}, index: {}",
+        //     composed,
+        //     composed >> 12,
+        //     composed << 4 >> 4
+        // );
+        if parse_cli_route(
             &router,
-            RouteKind::URL,
-            vec!["https://example.com:443/program/extensionA/fun".to_string()],
+            vec![
+                OsString::from("a"),
+                OsString::from("a1"),
+                option_name!("key-only"),
+            ],
         )
-        .unwrap();
-        assert_eq!(c.selected, 5);
+        .is_ok()
+        {
+            panic!("Can have `single1` or `multi1` options, but not `key-only` option");
+        }
+
+        assert!(parse_cli_route(
+            &router,
+            vec![
+                OsString::from("a"),
+                OsString::from("a1"),
+                option_name!("single1"),
+                OsString::from("single-val"),
+            ],
+        )
+        .is_ok());
+        assert!(parse_cli_route(
+            &router,
+            vec![OsString::from("a"), OsString::from("a1")],
+        )
+        .is_ok());
+        assert!(
+            parse_cli_route(&router, vec![OsString::from("a")]).is_ok()
+        );
+        assert!(parse_cli_route(
+            &router,
+            vec![OsString::from("b"), OsString::from("b2")]
+        )
+        .is_err());
+        assert!(parse_cli_route(
+            &router,
+            vec![
+                OsString::from("b"),
+                OsString::from("b2"),
+                option_name!("key-only")
+            ]
+        )
+        .is_ok());
     }
 }

@@ -1,0 +1,39 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug example 'large'",
+      "cargo": {
+        "args": [
+          "build",
+          "--example=large",
+          "--package=router"
+        ],
+        "filter": {
+          "name": "large",
+          "kind": "example"
+        }
+      },
+      "args": [
+        "--pr6vjra6oaakimd", "aa",
+        "--lqlhwk41mtp4se0", "bb", 
+        "--r9pkurgvexrchla",
+        "--value-arg", "b",
+        "--den57vpd7mmggz9", 
+        "--rm4jpdgggguvxnn", "cc",
+        "--pr6vjra6oaakimd", "aa2", 
+        "--d9thg7eanlkmmdv", "dd",
+        "--pr6vjra6oaakimd", "aa3", 
+        "--soozcjjoei7cq5o",
+        "--value-arg", "b2",
+        "--fotsfs3bknv04k2", "c"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

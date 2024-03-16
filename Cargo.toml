@@ -8,4 +8,11 @@ single-hyphen-option-names = []
 eq-separator = []
 
 [dependencies]
-tree-pack = {path = "/home/slanden/Projects/tree-pack"}
+opt_map = {path = "option_map"}
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "routing"
+harness = false
