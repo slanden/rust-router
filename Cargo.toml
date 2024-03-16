@@ -8,6 +8,7 @@ single-hyphen-option-names = []
 eq-separator = []
 
 [dependencies]
+common = {path = "./common"}
 opt_map = {path = "option_map"}
 
 [dev-dependencies]
@@ -16,3 +17,9 @@ criterion = "0.5"
 [[bench]]
 name = "routing"
 harness = false
+
+[workspace]
+members = [
+  "common",
+  "resource_routing",
+]
