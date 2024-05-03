@@ -198,6 +198,7 @@ impl<'a> Context<'a> {
         Ok(None)
     }
 }
+
 fn add_found_option(
     index: usize,
     options: &[Opt],
@@ -272,6 +273,161 @@ fn add_found_option(
             }
             Ok(())
         })
+}
+
+pub fn context_size(c: &Context) {
+    use core::mem::{size_of, size_of_val};
+    assert_eq!(size_of::<(u16, u16)>(), 4);
+    assert_eq!(size_of::<Range<u16>>(), 4);
+    assert_eq!(size_of::<TreeNode>(), 4);
+    assert_eq!(size_of::<Segment>(), 6);
+    assert_eq!(size_of::<(u16, char)>(), 8);
+
+    let counts = &[
+        size_of_val(&c),
+        size_of_val(&c.operands),
+        c.operands.iter().map(|x| size_of_val(x)).sum::<usize>(),
+        size_of_val(&c.saved_args),
+        c.saved_args.iter().map(|x| size_of_val(x)).sum::<usize>(),
+        size_of_val(&c.option_args),
+        c.option_args.iter().map(|x| size_of_val(x)).sum::<usize>(),
+        size_of_val(&c.arg_ranges),
+        c.arg_ranges.iter().map(|x| size_of_val(x)).sum::<usize>(),
+        size_of_val(&c.option_occurrences),
+        c.option_occurrences.len(),
+        size_of_val(&c.selected),
+        size_of_val(&c.operands_end),
+        size_of_val(&c.path_params),
+        // Router sizes
+        size_of_val(&c.router),
+        size_of_val(&c.router.tree),
+        c.router.tree.iter().map(|x| size_of_val(x)).sum::<usize>(),
+        size_of_val(&c.router.segments),
+        c.router
+            .segments
+            .iter()
+            .map(|x| size_of_val(x))
+            .sum::<usize>(),
+        size_of_val(&c.router.actions),
+        c.router
+            .actions
+            .iter()
+            .map(|x| size_of_val(x))
+            .sum::<usize>(),
+        size_of_val(&c.router.opt_group_rules),
+        c.router.opt_group_rules.len(),
+        size_of_val(&c.router.opt_groups),
+        c.router
+            .opt_groups
+            .iter()
+            .map(|x| {
+                size_of_val(x)
+                    + x.iter().map(|x| size_of_val(x)).sum::<usize>()
+            })
+            .sum::<usize>(),
+        size_of_val(&c.router.options),
+        c.router
+            .options
+            .iter()
+            .map(|x| size_of_val(x))
+            .sum::<usize>(),
+        size_of_val(&c.router.short_option_mappers),
+        c.router
+            .short_option_mappers
+            .iter()
+            .map(|x| size_of_val(x))
+            .sum::<usize>(),
+        size_of_val(&c.router.names),
+        c.router
+            .names
+            .iter()
+            .map(|x| size_of_val(x) + x.len() * size_of::<char>())
+            .sum::<usize>(),
+        size_of_val(&c.router.summaries),
+        c.router
+            .summaries
+            .iter()
+            .map(|x| size_of_val(x) + x.len() * size_of::<char>())
+            .sum::<usize>(),
+        size_of_val(&c.router.doc),
+        size_of_val(&c.router.help_opt_index),
+    ];
+    println!(
+        "Context size: {}
+operands size: {}
+sum: {}
+saved_args: {}
+sum: {}
+option_args: {}
+sum: {}
+arg_ranges: {}
+sum: {}
+option_occurrences: {}
+sum: {}
+selected: {}
+operands_end: {}
+path_params: {}
+--------------------------
+Router size: {}
+tree: {}
+sum: {}
+segments: {}
+sum: {}
+actions: {}
+sum: {}
+opt_group_rules: {}
+sum: {}
+opt_groups: {}
+sum: {}
+options: {}
+sum: {}
+short_option_mappers: {}
+sum: {}
+names: {}
+sum: {}
+summaries: {}
+sum: {}
+doc: {}
+help_opt_index: {}
+--------------------------
+Total: {}",
+        counts[0],
+        counts[1],
+        counts[2],
+        counts[3],
+        counts[4],
+        counts[5],
+        counts[6],
+        counts[7],
+        counts[8],
+        counts[9],
+        counts[10],
+        counts[11],
+        counts[12],
+        counts[13],
+        counts[14],
+        counts[15],
+        counts[16],
+        counts[17],
+        counts[18],
+        counts[19],
+        counts[20],
+        counts[21],
+        counts[22],
+        counts[23],
+        counts[24],
+        counts[25],
+        counts[26],
+        counts[27],
+        counts[28],
+        counts[29],
+        counts[30],
+        counts[31],
+        counts[32],
+        counts[33],
+        counts[34],
+        counts.iter().sum::<usize>()
+    );
 }
 
 /// Find the chunk of code to run, it's options, and
