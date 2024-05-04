@@ -148,54 +148,51 @@ impl<'a> Context<'a> {
         &self,
         option: impl Into<usize> + Copy,
     ) -> io::Result<Option<Vec<T>>> {
-        if self.option_occurrences[option.into()] > 0 {
-            if let OptArgKind::KeyOnly =
-                self.router.options[option.into()].kind
-            {
-                return Ok(Some(Vec::new()));
-            }
-
-            let mut r = self
-                .option_args
-                .iter()
-                .find(|(o, _)| *o as usize == option.into())
-                // Unwrap should be safe because non-KeyOnly options have values,
-                // and their occurrence was already checked
-                .unwrap()
-                .1 as usize..0;
-
-            match self.router.options[option.into()].kind {
-                OptArgKind::Multiple => {
-                    r.end = self.arg_ranges[r.start].end as usize;
-                    r.start = self.arg_ranges[r.start].start as usize;
-                }
-                _ => {
-                    r.end = r.start + 1;
-                }
-            };
-            let mut args = Vec::with_capacity(r.len());
-            return self.saved_args[r]
-                .iter()
-                .try_for_each(|arg| {
-                    arg.to_str()
-                        .ok_or(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            "",
-                        ))
-                        .and_then(|a| {
-                            a.parse::<T>()
-                                .map_err(|_| {
-                                    io::Error::new(
-                                        io::ErrorKind::InvalidData,
-                                        "",
-                                    )
-                                })
-                                .and_then(|t| Ok(args.push(t)))
-                        })
-                })
-                .and_then(|_| Ok(Some(args)));
+        if self.option_occurrences[option.into()] == 0 {
+            return Ok(None);
         }
-        Ok(None)
+        if let OptArgKind::KeyOnly =
+            self.router.options[option.into()].kind
+        {
+            return Ok(Some(Vec::new()));
+        }
+
+        let mut r = self
+            .option_args
+            .iter()
+            .find(|(o, _)| *o as usize == option.into())
+            // Unwrap should be safe because non-KeyOnly options have values,
+            // and their occurrence was already checked
+            .unwrap()
+            .1 as usize..0;
+
+        match self.router.options[option.into()].kind {
+            OptArgKind::Multiple => {
+                r.end = self.arg_ranges[r.start].end as usize;
+                r.start = self.arg_ranges[r.start].start as usize;
+            }
+            _ => {
+                r.end = r.start + 1;
+            }
+        };
+        let mut args = Vec::with_capacity(r.len());
+        return self.saved_args[r]
+            .iter()
+            .try_for_each(|arg| {
+                arg.to_str()
+                    .ok_or(io::Error::new(io::ErrorKind::InvalidData, ""))
+                    .and_then(|a| {
+                        a.parse::<T>()
+                            .map_err(|_| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "",
+                                )
+                            })
+                            .and_then(|t| Ok(args.push(t)))
+                    })
+            })
+            .and_then(|_| Ok(Some(args)));
     }
 }
 
