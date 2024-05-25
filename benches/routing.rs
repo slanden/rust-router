@@ -417,19 +417,12 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut _args = AppArgs {
                 number: c
-                    .opt::<i32>(Small_O::Number)
+                    .opt(Small_O::Number)
+                    .value()
                     .unwrap()
-                    .and_then(|args| Some(args[0]))
                     .unwrap_or(0),
-                opt_number: c
-                    .opt::<u32>(Small_O::OptNumber)
-                    .unwrap()
-                    .and_then(|args| Some(args[0])),
-                width: c
-                    .opt::<u16>(Small_O::Width)
-                    .unwrap()
-                    .and_then(|args| Some(args[0]))
-                    .unwrap_or(0),
+                opt_number: c.opt(Small_O::OptNumber).value().unwrap(),
+                width: c.opt(Small_O::Width).value().unwrap().unwrap_or(0),
                 input: c
                     .operands()
                     .iter()
@@ -443,18 +436,18 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         b.iter(|| {
             let mut _args = AppArgs {
                 number: c
-                    .opt::<i32>(Large_O::pr6vjra6oaakimd)
+                    .opt(Large_O::pr6vjra6oaakimd)
+                    .value()
                     .unwrap()
-                    .and_then(|args| Some(args[0]))
                     .unwrap_or(0),
                 opt_number: c
-                    .opt::<u32>(Large_O::lqlhwk41mtp4se0)
-                    .unwrap()
-                    .and_then(|args| Some(args[0])),
+                    .opt(Large_O::lqlhwk41mtp4se0)
+                    .value()
+                    .unwrap(),
                 width: c
-                    .opt::<u16>(Large_O::d9thg7eanlkmmdv)
+                    .opt(Large_O::d9thg7eanlkmmdv)
+                    .value()
                     .unwrap()
-                    .and_then(|args| Some(args[0]))
                     .unwrap_or(0),
                 input: c
                     .operands()

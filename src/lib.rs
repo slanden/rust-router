@@ -14,6 +14,40 @@ pub use {builder::*, doc::*, opt_map::optmap};
 
 pub type Action = fn(c: Context) -> io::Result<()>;
 
+pub struct Arg<'a> {
+    context: &'a Context<'a>,
+    range: Range<u16>,
+}
+impl<'a> Arg<'a> {
+    // Decision:
+    // The `Result` wraps the `Option` instead of the other way
+    // around so that a default can be assigned. If it were the
+    // other way around, the default would come before the type
+    // conversion and would need to be given in string form. The
+    // other way around would be better if those issues went away
+    //
+    /// Like `Iterator::next()`, except it attempts to convert from
+    /// the `OsString` argument to `T`. It doesn't use the name
+    /// `next` because for single-value options it sounds more
+    /// natural.
+    pub fn value<T: FromStr>(&mut self) -> io::Result<Option<T>> {
+        if self.range.is_empty() {
+            return Ok(None);
+        }
+        self.range.start += 1;
+
+        match self.context.saved_args[self.range.start as usize - 1]
+            .to_str()
+        {
+            None => Err(io::Error::new(io::ErrorKind::InvalidData, "")),
+            Some(a) => match a.parse::<T>() {
+                Ok(v) => Ok(Some(v)),
+                _ => Err(io::Error::new(io::ErrorKind::InvalidData, "")),
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 pub enum OptGroupRules {
     AnyOf,
@@ -144,55 +178,41 @@ impl<'a> Context<'a> {
     pub fn terminated_args(&self) -> &[OsString] {
         &self.operands[self.operands_end as usize..]
     }
-    pub fn opt<T: FromStr>(
-        &self,
-        option: impl Into<usize> + Copy,
-    ) -> io::Result<Option<Vec<T>>> {
+    /// Return an iterater-like to get an option's value(s)
+    pub fn opt(&self, option: impl Into<usize> + Copy) -> Arg {
+        let mut arg = Arg {
+            context: self,
+            range: 0..0,
+        };
         if self.option_occurrences[option.into()] == 0 {
-            return Ok(None);
+            return arg;
         }
         if let OptArgKind::KeyOnly =
             self.router.options[option.into()].kind
         {
-            return Ok(Some(Vec::new()));
+            return arg;
         }
-
-        let mut r = self
+        arg.range.start = self
             .option_args
             .iter()
             .find(|(o, _)| *o as usize == option.into())
             // Unwrap should be safe because non-KeyOnly options have values,
             // and their occurrence was already checked
             .unwrap()
-            .1 as usize..0;
-
+            .1;
         match self.router.options[option.into()].kind {
             OptArgKind::Multiple => {
-                r.end = self.arg_ranges[r.start].end as usize;
-                r.start = self.arg_ranges[r.start].start as usize;
+                arg.range.end =
+                    self.arg_ranges[arg.range.start as usize].end;
+                arg.range.start =
+                    self.arg_ranges[arg.range.start as usize].start;
             }
             _ => {
-                r.end = r.start + 1;
+                arg.range.end = arg.range.start + 1;
             }
         };
-        let mut args = Vec::with_capacity(r.len());
-        return self.saved_args[r]
-            .iter()
-            .try_for_each(|arg| {
-                arg.to_str()
-                    .ok_or(io::Error::new(io::ErrorKind::InvalidData, ""))
-                    .and_then(|a| {
-                        a.parse::<T>()
-                            .map_err(|_| {
-                                io::Error::new(
-                                    io::ErrorKind::InvalidData,
-                                    "",
-                                )
-                            })
-                            .and_then(|t| Ok(args.push(t)))
-                    })
-            })
-            .and_then(|_| Ok(Some(args)));
+
+        arg
     }
 }
 
