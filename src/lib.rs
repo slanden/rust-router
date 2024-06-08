@@ -144,10 +144,11 @@ pub struct Opt {
     pub kind: OptArgKind,
 }
 pub struct Context<'a> {
-    // The selected `Segment`'s operands
+    /// The selected `Segment`'s operands followed by any
+    /// arguments found after a terminator. `operands_end`
+    /// marks the start of any arguments after the terminator
     operands: Vec<OsString>,
-    // Raw args, and operands will be attached to the
-    // end
+    /// Option arguments
     pub saved_args: Vec<OsString>,
     // Index to options and index to either saved_args
     // or arg_ranges if the option kind is `Multiple`
@@ -942,15 +943,15 @@ mod tests {
                 |_| Ok(println!("b2 help")),
                 |_| Ok(println!("c help")),
             ],
-            short_option_mappers: &[(0, 'k'), (1, 's'), (2, 'm')],
+            short_option_mappers: &[(0, 'k'), (1, 'm'), (2, 's')],
             names: &[
-                "key-only", "single1", "multi1", "path", "a", "a1", "a2",
+                "key-only", "multi1", "single1", "path", "a", "a1", "a2",
                 "b", "b1", "b2", "c",
             ],
             summaries: &[
                 "key-only summary",
-                "single1 summary",
                 "multi1 summary",
+                "single1 summary",
                 "path summary",
                 "a summary",
                 "a1 summary",
@@ -966,11 +967,11 @@ mod tests {
                     name: 0,
                 },
                 Opt {
-                    kind: OptArgKind::Single,
+                    kind: OptArgKind::Multiple,
                     name: 1,
                 },
                 Opt {
-                    kind: OptArgKind::Multiple,
+                    kind: OptArgKind::Single,
                     name: 2,
                 },
             ],
@@ -1087,7 +1088,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.selected, 5);
-        assert_eq!(c.option_occurrences, [0, 1, 0]);
+        assert_eq!(c.option_occurrences, [0, 0, 1]);
         assert_eq!(c.saved_args, vec![OsString::from("val")]);
 
         // * An option that expects an option-arg and can
@@ -1107,7 +1108,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.selected, 5);
-        assert_eq!(c.option_occurrences, [0, 1, 2]);
+        assert_eq!(c.option_occurrences, [0, 2, 1]);
         assert_eq!(
             c.saved_args,
             vec![
@@ -1119,7 +1120,7 @@ mod tests {
         assert_eq!(c.arg_ranges.len(), 1);
         assert_eq!(c.arg_ranges[0].start, 0);
         assert_eq!(c.arg_ranges[0].end, 2);
-        assert_eq!(c.option_args, vec![(2, 0), (1, 2)]);
+        assert_eq!(c.option_args, vec![(1, 0), (2, 2)]);
 
         // * An option that expects an option-arg and can
         // * replaces its first occurrence
@@ -1140,7 +1141,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.selected, 5);
-        assert_eq!(c.option_occurrences, [0, 2, 0]);
+        assert_eq!(c.option_occurrences, [0, 0, 2]);
         assert_eq!(
             c.saved_args,
             vec![
@@ -1150,7 +1151,7 @@ mod tests {
             ],
         );
         assert_eq!(c.arg_ranges.len(), 0);
-        assert_eq!(c.option_args, vec![(1, 0)]);
+        assert_eq!(c.option_args, vec![(2, 0)]);
 
         // * Short option aliases
         let c = parse_cli_route(
@@ -1166,7 +1167,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c.selected, 5);
-        assert_eq!(c.option_occurrences, [2, 1, 0]);
+        assert_eq!(c.option_occurrences, [2, 0, 1]);
         assert_eq!(c.saved_args, vec![OsString::from("val")]);
     }
     #[test]
@@ -1185,8 +1186,9 @@ mod tests {
         .unwrap();
         assert_eq!(c.selected, 4);
         assert_eq!(c.option_occurrences, [0, 0, 0]);
+        assert_eq!(c.operands_end, 2);
         assert_eq!(
-            c.saved_args,
+            c.operands,
             vec![OsString::from("--single1"), OsString::from("b1")]
         );
     }
