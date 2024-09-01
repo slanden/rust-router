@@ -1,5 +1,7 @@
 use {
-    crate::{Action, Context, OptGroupRules, Segment, TreeNode},
+    crate::{
+        doc, Action, Context, DocGen, OptGroupRules, Segment, TreeNode,
+    },
     std::{io, mem::transmute},
 };
 
@@ -25,6 +27,7 @@ pub struct Seg<'a> {
     commands: &'a [Seg<'a>],
     opt_groups: &'a [OptGroup],
     action: Action,
+    doc: DocGen,
     operands: u16,
 }
 
@@ -87,6 +90,7 @@ impl<'a> Seg<'a> {
             commands: &[],
             opt_groups: &[],
             action: default_action,
+            doc: doc::empty_doc,
             // sub_count: 0,
             operands: 0,
         }
@@ -124,6 +128,7 @@ impl<'a> Seg<'a> {
                 commands: &[],
                 opt_groups: &[],
                 action: default_action,
+                doc: doc::empty_doc,
                 operands: 0,
             },
             0,
@@ -155,6 +160,10 @@ impl<'a> Seg<'a> {
         }
         (count, groups)
     }
+    pub const fn doc(mut self, gen_fn: DocGen) -> Self {
+        self.doc = gen_fn;
+        self
+    }
     pub const fn flatten<
         const COUNT: usize,
         const GROUP_COUNT: usize,
@@ -167,6 +176,7 @@ impl<'a> Seg<'a> {
         [TreeNode; COUNT],
         [Segment; COUNT],
         [Action; COUNT],
+        [DocGen; COUNT],
         [u8; GROUP_COUNT],
         [&'static [u16]; GROUP_COUNT],
         [&'static str; STR_LIST_COUNT],
@@ -182,6 +192,7 @@ impl<'a> Seg<'a> {
             opt_groups: 0,
         }; COUNT];
         let mut actions: [Action; COUNT] = [default_action; COUNT];
+        let mut doc_gens: [DocGen; COUNT] = [doc::empty_doc; COUNT];
         let mut opt_grp_rules: [u8; GROUP_COUNT] = [0; GROUP_COUNT];
         let mut opt_grps: [&[u16]; GROUP_COUNT] = [&[]; GROUP_COUNT];
         // Potentially more space than needed
@@ -195,6 +206,7 @@ impl<'a> Seg<'a> {
                 commands: &[],
                 opt_groups: &[],
                 action: default_action,
+                doc: doc::empty_doc,
                 operands: 0,
             },
             child_index: 0,
@@ -216,6 +228,7 @@ impl<'a> Seg<'a> {
         segments[0].name = opt_names.len() as u16;
         summaries[0 + opt_names.len()] = self.summary;
         actions[0] = self.action;
+        doc_gens[0] = self.doc;
         if !self.opt_groups.is_empty() {
             segments[0].opt_groups = (self.opt_groups.len() as u16) << 12
                 | opt_group_index as u16;
@@ -254,6 +267,7 @@ impl<'a> Seg<'a> {
                 segments[count].name = (count + opt_names.len()) as u16;
                 summaries[count + opt_names.len()] = child.summary;
                 actions[count] = child.action;
+                doc_gens[count] = child.doc;
                 if !child.opt_groups.is_empty() {
                     segments[count].opt_groups =
                         (child.opt_groups.len() as u16) << 12
@@ -305,6 +319,7 @@ impl<'a> Seg<'a> {
             tree,
             segments,
             actions,
+            doc_gens,
             opt_grp_rules,
             opt_grps,
             names,
@@ -343,9 +358,7 @@ impl<'a> Seg<'a> {
 /// ```
 #[macro_export]
 macro_rules! router {
-    (@optional_doc_fn) => {None};
-    (@optional_doc_fn $doc_fn: ident) => {Some($doc_fn)};
-    ($opt_enum: ident, $seg: ident $(, $doc_fn: ident)?) => {{
+    ($opt_enum: ident, $seg: ident) => {{
         // Returns list of options, option mappers, and
         // *the* names array The names array will be
         // appended to by commands
@@ -362,6 +375,7 @@ macro_rules! router {
             [router::TreeNode; _CMD_COUNT.0],
             [router::Segment; _CMD_COUNT.0],
             [router::Action; _CMD_COUNT.0],
+            [router::DocGen; _CMD_COUNT.0],
             [u8; _CMD_COUNT.1],
             [&[u16]; _CMD_COUNT.1],
             [&str; _STR_COUNT],
@@ -374,13 +388,13 @@ macro_rules! router {
             tree: &_CMD_PARTS.0,
             segments: &_CMD_PARTS.1,
             actions: &_CMD_PARTS.2,
-            opt_group_rules: &_CMD_PARTS.3,
-            opt_groups: &_CMD_PARTS.4,
+            docs: &_CMD_PARTS.3,
+            opt_group_rules: &_CMD_PARTS.4,
+            opt_groups: &_CMD_PARTS.5,
             options: &_OPS.0,
             short_option_mappers: &_OPS.1,
-            names: &_CMD_PARTS.5,
-            summaries: &_CMD_PARTS.6,
-            doc: router!(@optional_doc_fn $($doc_fn)?),
+            names: &_CMD_PARTS.6,
+            summaries: &_CMD_PARTS.7,
             help_opt_index: _OPS.4,
         }
     }};
@@ -409,6 +423,7 @@ mod tests {
             commands: &[],
             opt_groups: &[],
             action: |_| Ok(()),
+            doc: doc::empty_doc,
             operands: 0,
         };
         const CONFIG: Seg = Seg {
@@ -438,6 +453,7 @@ mod tests {
                                 },
                             ],
                             action: |_| Ok(()),
+                            doc: doc::empty_doc,
                             operands: 0,
                         },
                         Seg {
@@ -452,11 +468,13 @@ mod tests {
                                 rules: OptGroupRules::AnyOf as u8,
                             }],
                             action: |_| Ok(()),
+                            doc: doc::empty_doc,
                             operands: 0,
                         },
                     ],
                     opt_groups: &[],
                     action: |_| Ok(()),
+                    doc: doc::empty_doc,
                     operands: 0,
                 },
                 Seg {
@@ -465,11 +483,13 @@ mod tests {
                     commands: &[],
                     opt_groups: &[],
                     action: |_| Ok(()),
+                    doc: doc::empty_doc,
                     operands: 0,
                 },
             ],
             opt_groups: &[],
             action: |_| Ok(()),
+            doc: doc::empty_doc,
             operands: 0,
         };
         let (size, groups) = TEST
@@ -485,6 +505,7 @@ mod tests {
                             | OptGroupRules::Required as u8,
                     }],
                     action: |_| Ok(()),
+                    doc: doc::empty_doc,
                     operands: 0,
                 },
             ])
@@ -500,6 +521,7 @@ mod tests {
             commands: &[],
             opt_groups: &[],
             action: |_| Ok(()),
+            doc: doc::empty_doc,
             operands: 0,
         };
         const CONFIG: Seg = Seg {
@@ -529,6 +551,7 @@ mod tests {
                                 },
                             ],
                             action: |_| Ok(()),
+                            doc: doc::empty_doc,
                             operands: 0,
                         },
                         Seg {
@@ -543,11 +566,13 @@ mod tests {
                                 rules: OptGroupRules::AnyOf as u8,
                             }],
                             action: |_| Ok(()),
+                            doc: doc::empty_doc,
                             operands: 0,
                         },
                     ],
                     opt_groups: &[],
                     action: |_| Ok(()),
+                    doc: doc::empty_doc,
                     operands: 0,
                 },
                 Seg {
@@ -556,17 +581,20 @@ mod tests {
                     commands: &[],
                     opt_groups: &[],
                     action: |_| Ok(()),
+                    doc: doc::empty_doc,
                     operands: 0,
                 },
             ],
             opt_groups: &[],
             action: |_| Ok(()),
+            doc: doc::empty_doc,
             operands: 0,
         };
         const FLATTENED_FROM_STRUCTS: (
             [TreeNode; 7],
             [Segment; 7],
             [Action; 7],
+            [DocGen; 7],
             [u8; 4],
             [&[u16]; 4],
             [&str; 7],
@@ -584,6 +612,7 @@ mod tests {
                             | OptGroupRules::Required as u8,
                     }],
                     action: |_| Ok(()),
+                    doc: doc::empty_doc,
                     operands: 0,
                 },
             ])
@@ -665,6 +694,7 @@ mod tests {
             [TreeNode; 7],
             [Segment; 7],
             [Action; 7],
+            [DocGen; 7],
             [u8; 4],
             [&[u16]; 4],
             [&str; 7],
@@ -751,20 +781,20 @@ mod tests {
             OptGroupRules::AnyOf as u8,
             OptGroupRules::AnyOf as u8 | OptGroupRules::Required as u8,
         ];
-        assert_eq!(FLATTENED_FROM_STRUCTS.3, op_rules);
-        assert_eq!(FLATTENED_FROM_BUILDER.3, op_rules);
+        assert_eq!(FLATTENED_FROM_STRUCTS.4, op_rules);
+        assert_eq!(FLATTENED_FROM_BUILDER.4, op_rules);
 
-        assert_eq!(FLATTENED_FROM_STRUCTS.4[0], &[O::OptionA as u16]);
+        assert_eq!(FLATTENED_FROM_STRUCTS.5[0], &[O::OptionA as u16]);
         assert_eq!(
-            FLATTENED_FROM_STRUCTS.4[1],
+            FLATTENED_FROM_STRUCTS.5[1],
             &[O::OptionB as u16, O::OptionC as u16]
         );
         assert_eq!(
-            FLATTENED_FROM_STRUCTS.4[2],
+            FLATTENED_FROM_STRUCTS.5[2],
             &[O::OptionA as u16, O::OptionB as u16]
         );
         assert_eq!(
-            FLATTENED_FROM_STRUCTS.4[3],
+            FLATTENED_FROM_STRUCTS.5[3],
             &[O::OptionA as u16, O::OptionC as u16]
         );
     }

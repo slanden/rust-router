@@ -15,13 +15,28 @@ fn main() {
             .action(|_| Ok(println!("Add some things")))
             .operands(2),
         Seg::new("divide", "div summary")
-            .action(|_| Ok(println!("Divide two things."))),
+            .action(|_| Ok(println!("Divide two things.")))
+            .doc(|_, blocks| blocks.summary("div summary!")),
         Seg::new("print", "print summary")
-            .action(|_| Ok(println!("I'm printing"))),
+            .action(|_| Ok(println!("I'm printing")))
+            .doc(|_, blocks| {
+                let mut blocks = blocks.summary("Print dat summary");
+                // blocks
+                //     .options(O::ValueArg)
+                //     .append(text("An example"))
+                //     .insert_after(
+                //         "Some Section",
+                //         block("Another section", vec![text("Body text")]),
+                //     );
+                blocks.push(inline(vec![
+                    text("For example\n"),
+                    text("print -h").indent().bg_color(128, 128, 128),
+                ]));
+                // blocks.push(indent);
+                blocks
+            }),
+        // .doc(fnc),
     ]);
-    let r = router!(O, C, help);
+    let r = router!(O, C);
     r.run().unwrap();
-}
-fn help(_: &Context) -> String {
-    String::from("custom")
 }

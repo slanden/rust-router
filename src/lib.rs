@@ -13,6 +13,12 @@ use std::{ffi::OsString, io, ops::Range, str::FromStr};
 pub use {builder::*, doc::*, opt_map::optmap};
 
 pub type Action = fn(c: Context) -> io::Result<()>;
+pub type DocGen =
+    fn(c: &Context, doc: doc::DocNodeWithoutSummary) -> DocNode;
+// pub type DocGen = fn() -> impl std::fmt::Display;
+// pub type DocGen = dyn Fn() -> dyn std::fmt::Display;
+// pub type DocGen = fn(&Context) -> dyn std::fmt::Display;
+// pub type DocGen = impl Fn() -> impl std::fmt::Display;
 
 pub struct Arg<'a> {
     context: &'a Context<'a>,
@@ -68,6 +74,7 @@ pub struct Router {
     pub tree: &'static [TreeNode],
     pub segments: &'static [Segment],
     pub actions: &'static [Action],
+    pub docs: &'static [DocGen],
     // Bitmask: exclusive, required, and cascades bools
     // The u8s act as `OptGroupRules`, but are stored
     // as u8s to avoid casting at runtime
@@ -79,7 +86,6 @@ pub struct Router {
     pub short_option_mappers: &'static [(u16, char)],
     pub names: &'static [&'static str],
     pub summaries: &'static [&'static str],
-    pub doc: Option<fn(c: &Context) -> String>,
     pub help_opt_index: Option<u16>,
 }
 impl Router {
@@ -88,13 +94,12 @@ impl Router {
 
         match self.help_opt_index {
             Some(i) if c.option_occurrences[i as usize] > 0 => {
-                Ok(println!(
-                    "{}",
-                    match c.router.doc {
-                        Some(f) => f(&c),
-                        _ => cli_doc(&c),
-                    }
-                ))
+                let docs = c.router.docs[c.selected as usize](
+                    &c,
+                    default_doc_blocks(&c),
+                );
+                println!("{}", docs);
+                Ok(())
             }
             _ => self.actions[c.selected as usize](c),
         }
@@ -367,45 +372,47 @@ pub fn context_size(c: &Context) {
             .iter()
             .map(|x| size_of_val(x) + x.len() * size_of::<char>())
             .sum::<usize>(),
-        size_of_val(&c.router.doc),
+        size_of_val(&c.router.docs),
+        c.router.docs.iter().map(|x| size_of_val(x)).sum::<usize>(),
         size_of_val(&c.router.help_opt_index),
     ];
     println!(
         "Context size: {}
 operands size: {}
-sum: {}
+  sum: {}
 saved_args: {}
-sum: {}
+  sum: {}
 option_args: {}
-sum: {}
+  sum: {}
 arg_ranges: {}
-sum: {}
+  sum: {}
 option_occurrences: {}
-sum: {}
+  sum: {}
 selected: {}
 operands_end: {}
 path_params: {}
 --------------------------
 Router size: {}
 tree: {}
-sum: {}
+  sum: {}
 segments: {}
-sum: {}
+  sum: {}
 actions: {}
-sum: {}
+  sum: {}
 opt_group_rules: {}
-sum: {}
+  sum: {}
 opt_groups: {}
-sum: {}
+  sum: {}
 options: {}
-sum: {}
+  sum: {}
 short_option_mappers: {}
-sum: {}
+  sum: {}
 names: {}
-sum: {}
+  sum: {}
 summaries: {}
-sum: {}
-doc: {}
+  sum: {}
+docs: {}
+  sum: {}
 help_opt_index: {}
 --------------------------
 Total: {}",
@@ -444,6 +451,7 @@ Total: {}",
         counts[32],
         counts[33],
         counts[34],
+        counts[35],
         counts.iter().sum::<usize>()
     );
 }
@@ -813,6 +821,7 @@ pub fn parse_cli_route(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::doc::empty_doc;
 
     macro_rules! option_name {
         ($name:literal) => {{
@@ -943,6 +952,10 @@ mod tests {
                 |_| Ok(println!("b2 help")),
                 |_| Ok(println!("c help")),
             ],
+            docs: &[
+                empty_doc, empty_doc, empty_doc, empty_doc, empty_doc,
+                empty_doc, empty_doc, empty_doc,
+            ],
             short_option_mappers: &[(0, 'k'), (1, 'm'), (2, 's')],
             names: &[
                 "key-only", "multi1", "single1", "path", "a", "a1", "a2",
@@ -980,7 +993,6 @@ mod tests {
                 OptGroupRules::Required as u8,
             ],
             opt_groups: &[&[1, 2], &[0]],
-            doc: None,
             help_opt_index: None,
         }
     }
