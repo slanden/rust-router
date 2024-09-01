@@ -1,3 +1,18 @@
+use router::*;
+
+optmap!(enum O using [
+  // Regular comment
+  Format | 'f',
+  Help | 'h',
+  Quiet,
+  Req,
+  ValueArg > String,
+  MultiArg > String[],
+  /// Summary text for
+  ///
+  /// `Version`
+  Version,
+]);
 
 fn main() {
     const C: Seg = Seg::new("example", "an example program").nest(&[
