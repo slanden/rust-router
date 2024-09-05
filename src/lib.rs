@@ -6,7 +6,6 @@
 ///   Changes options to expect a single "-" prefix
 ///   instead of "--", and short options are disabled
 mod builder;
-// mod chatgpt;
 mod doc;
 // mod uri;
 use std::{ffi::OsString, io, ops::Range, str::FromStr};
@@ -15,10 +14,6 @@ pub use {builder::*, doc::*, opt_map::optmap};
 pub type Action = fn(c: Context) -> io::Result<()>;
 pub type DocGen =
     fn(c: &Context, doc: doc::DocNodeWithoutSummary) -> DocNode;
-// pub type DocGen = fn() -> impl std::fmt::Display;
-// pub type DocGen = dyn Fn() -> dyn std::fmt::Display;
-// pub type DocGen = fn(&Context) -> dyn std::fmt::Display;
-// pub type DocGen = impl Fn() -> impl std::fmt::Display;
 
 pub struct Arg<'a> {
     context: &'a Context<'a>,
@@ -54,100 +49,6 @@ impl<'a> Arg<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum OptGroupRules {
-    AnyOf,
-    OneOf,
-    Required,
-}
-
-#[derive(Clone, Copy)]
-pub struct TreeNode {
-    child_span: u16,
-    parent: u16,
-}
-pub struct Router {
-    // Decision:
-    // Couldn't use a const TreePack because `SIZE` in
-    // `const r: Router<SIZE> = router!(O, C);` had to
-    // be known by the user
-    pub tree: &'static [TreeNode],
-    pub segments: &'static [Segment],
-    pub actions: &'static [Action],
-    pub docs: &'static [DocGen],
-    // Bitmask: exclusive, required, and cascades bools
-    // The u8s act as `OptGroupRules`, but are stored
-    // as u8s to avoid casting at runtime
-    pub opt_group_rules: &'static [u8],
-    // List of all commands' groups; the commands themselves
-    // hold ranges into this
-    pub opt_groups: &'static [&'static [u16]],
-    pub options: &'static [Opt],
-    pub short_option_mappers: &'static [(u16, char)],
-    pub names: &'static [&'static str],
-    pub summaries: &'static [&'static str],
-    pub help_opt_index: Option<u16>,
-}
-impl Router {
-    pub fn run(&self) -> io::Result<()> {
-        let c = parse_cli_route(self, std::env::args_os().skip(1))?;
-
-        match self.help_opt_index {
-            Some(i) if c.option_occurrences[i as usize] > 0 => {
-                let docs = c.router.docs[c.selected as usize](
-                    &c,
-                    default_doc_blocks(&c),
-                );
-                println!("{}", docs);
-                Ok(())
-            }
-            _ => self.actions[c.selected as usize](c),
-        }
-    }
-    #[inline(always)]
-    pub fn parse(
-        &self,
-        args: impl IntoIterator<Item = OsString>,
-    ) -> io::Result<Context> {
-        parse_cli_route(self, args)
-    }
-}
-/// Things needed at runtime for the segment (summary stored separately)
-#[derive(Debug, Clone, Copy)]
-pub struct Segment {
-    operands: u16,
-    /// First 4 bits specify a length of groups as an offset,
-    /// from the index. The remaining 12 bits are for the
-    /// index.
-    /// This means a `Segment` can have up to 15 option
-    /// groups, and the total number of groups for the
-    /// `Router` cannot exceed 8,190.
-    ///
-    /// Will be 0 if it has no groups
-    pub opt_groups: u16,
-    /// An index into the shared list of names
-    pub name: u16,
-}
-/// Used during parsing to determine if it needs to be cached
-#[derive(Debug)]
-pub enum OptArgKind {
-    /// The option has no option-argument
-    KeyOnly,
-    /// Expects a single option-argument, and an
-    /// occurrence of the option overrides any previous
-    /// occurrence of the same option
-    Single,
-    /// Expects an option-argument, and an occurrence
-    /// of the option adds to a list
-    Multiple,
-}
-/// Holds data necessary to map a parsed argument to an option
-#[derive(Debug)]
-pub struct Opt {
-    /// An index into the shared list of names
-    pub name: u16,
-    pub kind: OptArgKind,
-}
 pub struct Context<'a> {
     /// The selected `Segment`'s operands followed by any
     /// arguments found after a terminator. `operands_end`
@@ -175,14 +76,6 @@ impl<'a> Context<'a> {
     pub fn operands(&self) -> &[OsString] {
         &self.operands
             [self.path_params as usize..self.operands_end as usize]
-    }
-    #[inline]
-    pub fn path_params(&self) -> &[OsString] {
-        &self.operands[..self.path_params as usize]
-    }
-    #[inline]
-    pub fn terminated_args(&self) -> &[OsString] {
-        &self.operands[self.operands_end as usize..]
     }
     /// Return an iterater-like to get an option's value(s)
     pub fn opt(&self, option: impl Into<usize> + Copy) -> Arg {
@@ -220,6 +113,113 @@ impl<'a> Context<'a> {
 
         arg
     }
+    #[inline]
+    pub fn path_params(&self) -> &[OsString] {
+        &self.operands[..self.path_params as usize]
+    }
+    #[inline]
+    pub fn terminated_args(&self) -> &[OsString] {
+        &self.operands[self.operands_end as usize..]
+    }
+}
+
+/// Holds data necessary to map a parsed argument to an option
+#[derive(Debug)]
+pub struct Opt {
+    /// An index into the shared list of names
+    pub name: u16,
+    pub kind: OptArgKind,
+}
+
+/// Used during parsing to determine if it needs to be cached
+#[derive(Debug)]
+pub enum OptArgKind {
+    /// The option has no option-argument
+    KeyOnly,
+    /// Expects a single option-argument, and an
+    /// occurrence of the option overrides any previous
+    /// occurrence of the same option
+    Single,
+    /// Expects an option-argument, and an occurrence
+    /// of the option adds to a list
+    Multiple,
+}
+
+#[derive(Clone, Copy)]
+pub enum OptGroupRules {
+    AnyOf,
+    OneOf,
+    Required,
+}
+
+pub struct Router {
+    // Decision:
+    // Couldn't use a const TreePack because `SIZE` in
+    // `const r: Router<SIZE> = router!(O, C);` had to
+    // be known by the user
+    pub tree: &'static [TreeNode],
+    pub segments: &'static [Segment],
+    pub actions: &'static [Action],
+    pub docs: &'static [DocGen],
+    // Bitmask: exclusive, required, and cascades bools
+    // The u8s act as `OptGroupRules`, but are stored
+    // as u8s to avoid casting at runtime
+    pub opt_group_rules: &'static [u8],
+    // List of all commands' groups; the commands themselves
+    // hold ranges into this
+    pub opt_groups: &'static [&'static [u16]],
+    pub options: &'static [Opt],
+    pub short_option_mappers: &'static [(u16, char)],
+    pub names: &'static [&'static str],
+    pub summaries: &'static [&'static str],
+    pub help_opt_index: Option<u16>,
+}
+impl Router {
+    #[inline(always)]
+    pub fn parse(
+        &self,
+        args: impl IntoIterator<Item = OsString>,
+    ) -> io::Result<Context> {
+        parse_cli_route(self, args)
+    }
+    pub fn run(&self) -> io::Result<()> {
+        let c = parse_cli_route(self, std::env::args_os().skip(1))?;
+
+        match self.help_opt_index {
+            Some(i) if c.option_occurrences[i as usize] > 0 => {
+                let docs = c.router.docs[c.selected as usize](
+                    &c,
+                    default_doc_blocks(&c),
+                );
+                println!("{}", docs);
+                Ok(())
+            }
+            _ => self.actions[c.selected as usize](c),
+        }
+    }
+}
+
+/// Things needed at runtime for the segment (summary stored separately)
+#[derive(Debug, Clone, Copy)]
+pub struct Segment {
+    operands: u16,
+    /// First 4 bits specify a length of groups as an offset,
+    /// from the index. The remaining 12 bits are for the
+    /// index.
+    /// This means a `Segment` can have up to 15 option
+    /// groups, and the total number of groups for the
+    /// `Router` cannot exceed 8,190.
+    ///
+    /// Will be 0 if it has no groups
+    pub opt_groups: u16,
+    /// An index into the shared list of names
+    pub name: u16,
+}
+
+#[derive(Clone, Copy)]
+pub struct TreeNode {
+    child_span: u16,
+    parent: u16,
 }
 
 fn add_found_option(

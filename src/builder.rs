@@ -5,10 +5,6 @@ use {
     std::{io, mem::transmute},
 };
 
-pub fn default_action(_: Context) -> io::Result<()> {
-    Ok(())
-}
-
 /// Temporary struct used when flattening a Seg tree
 /// to be able to navigate out from a deep nest level
 #[derive(Clone, Copy)]
@@ -18,17 +14,6 @@ struct Breadcrumb<'a> {
     child_index: usize,
     // The index in the output array
     final_index: usize,
-}
-
-#[derive(Clone, Copy)]
-pub struct Seg<'a> {
-    name: &'static str,
-    summary: &'static str,
-    commands: &'a [Seg<'a>],
-    opt_groups: &'a [OptGroup],
-    action: Action,
-    doc: DocGen,
-    operands: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -82,6 +67,17 @@ impl OptGroup {
 //         _ => false,
 //     }
 // }
+
+#[derive(Clone, Copy)]
+pub struct Seg<'a> {
+    name: &'static str,
+    summary: &'static str,
+    commands: &'a [Seg<'a>],
+    opt_groups: &'a [OptGroup],
+    action: Action,
+    doc: DocGen,
+    operands: u16,
+}
 impl<'a> Seg<'a> {
     pub const fn new(name: &'static str, summary: &'static str) -> Self {
         Self {
@@ -338,6 +334,10 @@ impl<'a> Seg<'a> {
         self.opt_groups = groups;
         self
     }
+}
+
+pub fn default_action(_: Context) -> io::Result<()> {
+    Ok(())
 }
 
 /// Creates a `Router` from a `Seg` tree.
