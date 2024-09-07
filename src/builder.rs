@@ -156,7 +156,7 @@ impl<'a> Seg<'a> {
         }
         (count, groups)
     }
-    pub const fn doc(mut self, gen_fn: DocGen) -> Self {
+    const fn doc(mut self, gen_fn: DocGen) -> Self {
         self.doc = gen_fn;
         self
     }
@@ -167,16 +167,15 @@ impl<'a> Seg<'a> {
     >(
         self,
         opt_names: &[&'static str],
-        opt_summaries: &[&'static str],
     ) -> (
         [TreeNode; COUNT],
         [Segment; COUNT],
         [Action; COUNT],
-        [DocGen; COUNT],
+        // [DocGen; COUNT],
         [u8; GROUP_COUNT],
         [&'static [u16]; GROUP_COUNT],
         [&'static str; STR_LIST_COUNT],
-        [&'static str; STR_LIST_COUNT],
+        // [&'static str; STR_LIST_COUNT],
     ) {
         let mut tree = [TreeNode {
             child_span: 0,
@@ -188,12 +187,12 @@ impl<'a> Seg<'a> {
             opt_groups: 0,
         }; COUNT];
         let mut actions: [Action; COUNT] = [default_action; COUNT];
-        let mut doc_gens: [DocGen; COUNT] = [doc::empty_doc; COUNT];
+        // let mut doc_gens: [DocGen; COUNT] = [doc::empty_doc; COUNT];
         let mut opt_grp_rules: [u8; GROUP_COUNT] = [0; GROUP_COUNT];
         let mut opt_grps: [&[u16]; GROUP_COUNT] = [&[]; GROUP_COUNT];
         // Potentially more space than needed
         let mut names = [""; STR_LIST_COUNT];
-        let mut summaries = [""; STR_LIST_COUNT];
+        // let mut summaries = [""; STR_LIST_COUNT];
         // Facilitates a depth-first search
         let mut breadcrumbs = [Breadcrumb {
             seg: Seg {
@@ -215,16 +214,16 @@ impl<'a> Seg<'a> {
 
         while count < opt_names.len() {
             names[count] = opt_names[count];
-            summaries[count] = opt_summaries[count];
+            // summaries[count] = opt_summaries[count];
             count += 1;
         }
         count = 0;
 
         names[0 + opt_names.len()] = self.name;
         segments[0].name = opt_names.len() as u16;
-        summaries[0 + opt_names.len()] = self.summary;
+        // summaries[0 + opt_names.len()] = self.summary;
         actions[0] = self.action;
-        doc_gens[0] = self.doc;
+        // doc_gens[0] = self.doc;
         if !self.opt_groups.is_empty() {
             segments[0].opt_groups = (self.opt_groups.len() as u16) << 12
                 | opt_group_index as u16;
@@ -261,9 +260,9 @@ impl<'a> Seg<'a> {
 
                 names[count + opt_names.len()] = child.name;
                 segments[count].name = (count + opt_names.len()) as u16;
-                summaries[count + opt_names.len()] = child.summary;
+                // summaries[count + opt_names.len()] = child.summary;
                 actions[count] = child.action;
-                doc_gens[count] = child.doc;
+                // doc_gens[count] = child.doc;
                 if !child.opt_groups.is_empty() {
                     segments[count].opt_groups =
                         (child.opt_groups.len() as u16) << 12
@@ -315,11 +314,11 @@ impl<'a> Seg<'a> {
             tree,
             segments,
             actions,
-            doc_gens,
+            // doc_gens,
             opt_grp_rules,
             opt_grps,
             names,
-            summaries,
+            // summaries,
         )
     }
     pub const fn nest(mut self, commands: &'a [Seg]) -> Self {
@@ -375,26 +374,26 @@ macro_rules! router {
             [router::TreeNode; _CMD_COUNT.0],
             [router::Segment; _CMD_COUNT.0],
             [router::Action; _CMD_COUNT.0],
-            [router::DocGen; _CMD_COUNT.0],
+            // [router::DocGen; _CMD_COUNT.0],
             [u8; _CMD_COUNT.1],
             [&[u16]; _CMD_COUNT.1],
             [&str; _STR_COUNT],
-            [&str; _STR_COUNT],
+            // [&str; _STR_COUNT],
         ) = $seg
             .flatten::<{ _CMD_COUNT.0 }, { _CMD_COUNT.1 }, _STR_COUNT>(
-                _OPS.2, _OPS.3,
+                _OPS.2,
             );
         Router {
             tree: &_CMD_PARTS.0,
             segments: &_CMD_PARTS.1,
             actions: &_CMD_PARTS.2,
-            docs: &_CMD_PARTS.3,
-            opt_group_rules: &_CMD_PARTS.4,
-            opt_groups: &_CMD_PARTS.5,
+            // docs: &_CMD_PARTS.3,
+            opt_group_rules: &_CMD_PARTS.3,
+            opt_groups: &_CMD_PARTS.4,
             options: &_OPS.0,
             short_option_mappers: &_OPS.1,
-            names: &_CMD_PARTS.6,
-            summaries: &_CMD_PARTS.7,
+            names: &_CMD_PARTS.5,
+            // summaries: &_CMD_PARTS.7,
             help_opt_index: _OPS.4,
         }
     }};
@@ -594,11 +593,11 @@ mod tests {
             [TreeNode; 7],
             [Segment; 7],
             [Action; 7],
-            [DocGen; 7],
+            // [DocGen; 7],
             [u8; 4],
             [&[u16]; 4],
             [&str; 7],
-            [&str; 7],
+            // [&str; 7],
         ) = TEST
             .nest(&[
                 CONFIG,
@@ -616,7 +615,7 @@ mod tests {
                     operands: 0,
                 },
             ])
-            .flatten::<7, 4, 7>(&[], &[]);
+            .flatten::<7, 4, 7>(&[]);
 
         let expected = (
             [
@@ -694,11 +693,11 @@ mod tests {
             [TreeNode; 7],
             [Segment; 7],
             [Action; 7],
-            [DocGen; 7],
+            // [DocGen; 7],
             [u8; 4],
             [&[u16]; 4],
             [&str; 7],
-            [&str; 7],
+            // [&str; 7],
         ) = Seg/* ::<O> */::new("test", "")
             .nest(&[
                 Seg::new("config", "").nest(&[
@@ -733,7 +732,7 @@ mod tests {
                         | OptGroupRules::Required as u8,
                 }]),
             ])
-            .flatten::<7, 4, 7>(&[], &[]);
+            .flatten::<7, 4, 7>(&[]);
         assert_eq!(FLATTENED_FROM_BUILDER.0.len(), expected.0.len());
 
         for i in 0..FLATTENED_FROM_STRUCTS.0.len() {
@@ -781,20 +780,20 @@ mod tests {
             OptGroupRules::AnyOf as u8,
             OptGroupRules::AnyOf as u8 | OptGroupRules::Required as u8,
         ];
-        assert_eq!(FLATTENED_FROM_STRUCTS.4, op_rules);
-        assert_eq!(FLATTENED_FROM_BUILDER.4, op_rules);
+        assert_eq!(FLATTENED_FROM_STRUCTS.3, op_rules);
+        assert_eq!(FLATTENED_FROM_BUILDER.3, op_rules);
 
-        assert_eq!(FLATTENED_FROM_STRUCTS.5[0], &[O::OptionA as u16]);
+        assert_eq!(FLATTENED_FROM_STRUCTS.4[0], &[O::OptionA as u16]);
         assert_eq!(
-            FLATTENED_FROM_STRUCTS.5[1],
+            FLATTENED_FROM_STRUCTS.4[1],
             &[O::OptionB as u16, O::OptionC as u16]
         );
         assert_eq!(
-            FLATTENED_FROM_STRUCTS.5[2],
+            FLATTENED_FROM_STRUCTS.4[2],
             &[O::OptionA as u16, O::OptionB as u16]
         );
         assert_eq!(
-            FLATTENED_FROM_STRUCTS.5[3],
+            FLATTENED_FROM_STRUCTS.4[3],
             &[O::OptionA as u16, O::OptionC as u16]
         );
     }
@@ -804,7 +803,7 @@ mod tests {
             .nest(&[Seg::new("a", "")
                 .operands(1)
                 .nest(&[Seg::new("a1", ""), Seg::new("a2", "")])])
-            .flatten::<4, 0, 4>(&[], &[]);
+            .flatten::<4, 0, 4>(&[]);
         assert_eq!(parts.1[1].operands, 0);
     }
 }

@@ -1,10 +1,11 @@
-/// # Features
-/// * **eq-separator** -
-///   Allow separating options from option-arguments
-///   with a '='
-/// * **single-hyphen-option-names** -
-///   Changes options to expect a single "-" prefix
-///   instead of "--", and short options are disabled
+//! # Features
+//! * **eq-separator** -
+//!   Allow separating options from option-arguments
+//!   with a '='
+//! * **single-hyphen-option-names** -
+//!   Changes options to expect a single "-" prefix
+//!   instead of "--", and short options are disabled
+
 mod builder;
 mod doc;
 // mod uri;
@@ -154,13 +155,12 @@ pub enum OptGroupRules {
 
 pub struct Router {
     // Decision:
-    // Couldn't use a const TreePack because `SIZE` in
+    // Couldn't use a const `TreePack` because `SIZE` in
     // `const r: Router<SIZE> = router!(O, C);` had to
     // be known by the user
     pub tree: &'static [TreeNode],
     pub segments: &'static [Segment],
     pub actions: &'static [Action],
-    pub docs: &'static [DocGen],
     // Bitmask: exclusive, required, and cascades bools
     // The u8s act as `OptGroupRules`, but are stored
     // as u8s to avoid casting at runtime
@@ -171,7 +171,6 @@ pub struct Router {
     pub options: &'static [Opt],
     pub short_option_mappers: &'static [(u16, char)],
     pub names: &'static [&'static str],
-    pub summaries: &'static [&'static str],
     pub help_opt_index: Option<u16>,
 }
 impl Router {
@@ -182,20 +181,13 @@ impl Router {
     ) -> io::Result<Context> {
         parse_cli_route(self, args)
     }
+    #[inline(always)]
+    pub fn context(&self) -> io::Result<Context> {
+        parse_cli_route(self, std::env::args_os().skip(1))
+    }
     pub fn run(&self) -> io::Result<()> {
         let c = parse_cli_route(self, std::env::args_os().skip(1))?;
-
-        match self.help_opt_index {
-            Some(i) if c.option_occurrences[i as usize] > 0 => {
-                let docs = c.router.docs[c.selected as usize](
-                    &c,
-                    default_doc_blocks(&c),
-                );
-                println!("{}", docs);
-                Ok(())
-            }
-            _ => self.actions[c.selected as usize](c),
-        }
+        self.actions[c.selected as usize](c)
     }
 }
 
@@ -366,14 +358,14 @@ pub fn context_size(c: &Context) {
             .iter()
             .map(|x| size_of_val(x) + x.len() * size_of::<char>())
             .sum::<usize>(),
-        size_of_val(&c.router.summaries),
-        c.router
-            .summaries
-            .iter()
-            .map(|x| size_of_val(x) + x.len() * size_of::<char>())
-            .sum::<usize>(),
-        size_of_val(&c.router.docs),
-        c.router.docs.iter().map(|x| size_of_val(x)).sum::<usize>(),
+        // size_of_val(&c.router.summaries),
+        // c.router
+        //     .summaries
+        //     .iter()
+        //     .map(|x| size_of_val(x) + x.len() * size_of::<char>())
+        //     .sum::<usize>(),
+        // size_of_val(&c.router.docs),
+        // c.router.docs.iter().map(|x| size_of_val(x)).sum::<usize>(),
         size_of_val(&c.router.help_opt_index),
     ];
     println!(
@@ -408,10 +400,6 @@ options: {}
 short_option_mappers: {}
   sum: {}
 names: {}
-  sum: {}
-summaries: {}
-  sum: {}
-docs: {}
   sum: {}
 help_opt_index: {}
 --------------------------
@@ -448,10 +436,6 @@ Total: {}",
         counts[29],
         counts[30],
         counts[31],
-        counts[32],
-        counts[33],
-        counts[34],
-        counts[35],
         counts.iter().sum::<usize>()
     );
 }
@@ -821,7 +805,6 @@ pub fn parse_cli_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::doc::empty_doc;
 
     macro_rules! option_name {
         ($name:literal) => {{
@@ -952,27 +935,10 @@ mod tests {
                 |_| Ok(println!("b2 help")),
                 |_| Ok(println!("c help")),
             ],
-            docs: &[
-                empty_doc, empty_doc, empty_doc, empty_doc, empty_doc,
-                empty_doc, empty_doc, empty_doc,
-            ],
             short_option_mappers: &[(0, 'k'), (1, 'm'), (2, 's')],
             names: &[
                 "key-only", "multi1", "single1", "path", "a", "a1", "a2",
                 "b", "b1", "b2", "c",
-            ],
-            summaries: &[
-                "key-only summary",
-                "multi1 summary",
-                "single1 summary",
-                "path summary",
-                "a summary",
-                "a1 summary",
-                "a2 summary",
-                "b summary",
-                "b1 summary",
-                "b2 summary",
-                "c summary",
             ],
             options: &[
                 Opt {
