@@ -1293,4 +1293,38 @@ mod tests {
         )
         .is_ok());
     }
+    #[test]
+    fn should_get_operands() {
+        let router = data();
+        let args = vec![
+            OsString::from("a"),
+            option_name!("key-only"),
+            OsString::from("a2"),
+            OsString::from("operand1"),
+            OsString::from("operand2"),
+            option_name!("multi1"),
+            OsString::from("some-multi-opt-val"),
+            option_name!("multi1"),
+            OsString::from("another-multi-opt-val"),
+            option_name!("single1"),
+            OsString::from("single-opt-val"),
+            OsString::from("--"),
+            OsString::from("some-other-arg"),
+        ];
+        let c = parse_cli_route(&router, args.clone()).unwrap();
+        assert_eq!(
+            c.operands()
+                .iter()
+                .map(|arg| arg.to_str().unwrap())
+                .collect::<Vec<&str>>(),
+            vec!["operand1", "operand2"]
+        );
+        assert_eq!(
+            c.terminated_args()
+                .iter()
+                .map(|arg| arg.to_str().unwrap())
+                .collect::<Vec<&str>>(),
+            vec!["some-other-arg"]
+        )
+    }
 }
