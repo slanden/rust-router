@@ -912,6 +912,11 @@ mod tests {
                     child_span: 0,
                     parent: 0,
                 },
+                // 9:   d
+                TreeNode {
+                    child_span: 0,
+                    parent: 0,
+                },
             ],
             segments: &[
                 Segment {
@@ -950,9 +955,14 @@ mod tests {
                     name: 9,
                 },
                 Segment {
-                    operands: 0,
+                    operands: 1,
                     opt_groups: 0,
                     name: 10,
+                },
+                Segment {
+                    operands: 0,
+                    opt_groups: 0,
+                    name: 11,
                 },
             ],
             actions: &[
@@ -964,11 +974,12 @@ mod tests {
                 b1_action,
                 |_| Ok(println!("b2 help")),
                 |_| Ok(println!("c help")),
+                |_| Ok(println!("d help")),
             ],
             short_option_mappers: &[(0, 'k'), (1, 'm'), (2, 's')],
             names: &[
                 "key-only", "multi1", "single1", "path", "a", "a1", "a2",
-                "b", "b1", "b2", "c",
+                "b", "b1", "b2", "c", "d",
             ],
             options: &[
                 Opt {
@@ -1326,5 +1337,27 @@ mod tests {
                 .collect::<Vec<&str>>(),
             vec!["some-other-arg"]
         )
+    }
+    #[test]
+    fn should_handle_a_hyphen_only_argument() {
+        let router = data();
+        let mut args = vec![OsString::from("c"), OsString::from("-")];
+        let mut c = parse_cli_route(&router, args.clone()).unwrap();
+        assert_eq!(
+            c.operands()
+                .iter()
+                .map(|arg| arg.to_str().unwrap())
+                .collect::<Vec<&str>>(),
+            vec!["-"]
+        );
+
+        args = vec![
+            OsString::from("a"),
+            OsString::from("a1"),
+            option_name!("single1"),
+            OsString::from("-"),
+        ];
+        c = parse_cli_route(&router, args.clone()).unwrap();
+        assert_eq!(c.opt(2usize).value::<char>().unwrap().unwrap(), '-');
     }
 }
