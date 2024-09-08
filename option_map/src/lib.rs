@@ -7,25 +7,47 @@ enum OptArg {
     Single,
     Multi,
 }
+enum NameCase {
+    Lower,
+    Sentence,
+}
 
 const MISSING_OPT_ARG_IDENT_MSG: &'static str =
   "Missing an identifier for the option-argument. Currently, this is limited to `String`";
 
-fn to_kebab_case(ident: &str) -> String {
+fn to_case(ident: &str, case: &NameCase) -> String {
     let mut out = String::with_capacity(ident.len());
-    let mut chars = ident.chars().enumerate();
-    let mut start = 0;
-    while let Some((i, c)) = chars.next() {
-        if c.is_uppercase() {
-            out.push_str(&ident[start..i]);
-            if i > 0 {
-                out.push('-');
+    match case {
+        NameCase::Lower => {
+            let mut chars = ident.chars().enumerate();
+            let mut start = 0;
+            while let Some((i, c)) = chars.next() {
+                if c.is_uppercase() {
+                    out.push_str(&ident[start..i]);
+                    if i > 0 {
+                        out.push('-');
+                    }
+                    out.extend(c.to_lowercase());
+                    start = i + c.len_utf8();
+                }
             }
-            out.extend(c.to_lowercase());
-            start = i + c.len_utf8();
+            out.push_str(&ident[start..]);
+        }
+        NameCase::Sentence => {
+            let mut chars = ident.chars();
+            // Unwrap safe when called in parsing logic because
+            // this function only called when there's a value
+            out.extend(chars.next().unwrap().to_uppercase());
+            while let Some(c) = chars.next() {
+                if c.is_uppercase() {
+                    out.push('-');
+                    out.extend(c.to_lowercase());
+                    continue;
+                }
+                out.push(c);
+            }
         }
     }
-    out.push_str(&ident[start..]);
     out
 }
 
@@ -51,7 +73,10 @@ fn to_kebab_case(ident: &str) -> String {
 ///   // A variant with a short alias and an argument
 ///   Variant4 | 'b' > String,
 ///   /// This doc comment will become the option's summary text
-///   Variant5
+///   Variant5,
+///   /// Can change the case of the name: Sentence
+///   #[case="sentence"]
+///   SentenceCase,
 /// ]);
 /// ```
 #[proc_macro]
@@ -70,6 +95,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
         String,
         Option<char>,
         OptArg,
+        NameCase,
     )>::new();
 
     out.push_str("#[repr(u16)]#[derive(Clone,Copy)]");
@@ -128,6 +154,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
         String::new(),
         None,
         OptArg::None,
+        NameCase::Lower,
     ));
     let mut variant = 0;
     while let Some(t) = input.next() {
@@ -172,6 +199,25 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                                     }
                                 }
                             }
+                            Some(tok) if tok.to_string() == "case" => {
+                                // Skip the '=' token
+                                attr_tokens.next();
+                                let text = attr_tokens
+                                    .next()
+                                    .unwrap()
+                                    .to_string();
+                                // Remove quotes
+                                let text = text[1..text.len() - 1].trim();
+                                if !text.is_empty() {
+                                    opt_variants[variant].6 = match text {
+                                        "lower" => NameCase::Lower,
+                                        "sentence" => NameCase::Sentence,
+                                        _ => {
+                                            panic!("Invalid value for `case` attribute");
+                                        }
+                                    };
+                                }
+                            }
                             Some(_) => {
                                 opt_variants[variant].3.push('#');
                                 opt_variants[variant]
@@ -190,10 +236,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
             }
             TokenTree::Ident(ident) => {
                 opt_variants[variant].0 = ident.to_string();
-                if (opt_variants[variant].0.starts_with('h')
-                    || opt_variants[variant].0.starts_with('H'))
-                    && opt_variants[variant].0.ends_with("elp")
-                {
+                if opt_variants[variant].0.to_lowercase() == "help" {
                     help_opt_pos = Some(variant);
                 }
                 if !doc.is_empty() {
@@ -220,6 +263,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                         String::new(),
                         None,
                         OptArg::None,
+                        NameCase::Lower,
                     ));
                     continue;
                 }
@@ -270,6 +314,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                                         String::new(),
                                         None,
                                         OptArg::None,
+                                        NameCase::Lower,
                                     ));
                                     continue;
                                 }
@@ -295,6 +340,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                                 String::new(),
                                 None,
                                 OptArg::None,
+                                NameCase::Lower,
                             ));
                             continue;
                         }
@@ -324,6 +370,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                             String::new(),
                             None,
                             OptArg::None,
+                            NameCase::Lower,
                         ));
                     }
                     '>' => {
@@ -370,6 +417,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                             String::new(),
                             None,
                             OptArg::None,
+                            NameCase::Lower,
                         ));
                         continue;
                     }
@@ -421,7 +469,7 @@ pub fn optmap(input: TokenStream) -> TokenStream {
         summaries.push_str("\",");
 
         names.push_str("\"");
-        names.push_str(&to_kebab_case(&o.0));
+        names.push_str(&to_case(&o.0, &o.6));
         names.push_str("\",");
         variant += 1;
     }
@@ -477,10 +525,16 @@ mod tests {
 
     #[test]
     fn should_convert_an_ident_to_kebab_case() {
-        assert_eq!(to_kebab_case("String"), "string".to_string());
-        assert_eq!(to_kebab_case("TwoWords"), "two-words".to_string());
         assert_eq!(
-            to_kebab_case("SomeManyWordsHere"),
+            to_case("String", &NameCase::Lower),
+            "string".to_string()
+        );
+        assert_eq!(
+            to_case("TwoWords", &NameCase::Lower),
+            "two-words".to_string()
+        );
+        assert_eq!(
+            to_case("SomeManyWordsHere", &NameCase::Lower),
             "some-many-words-here".to_string()
         );
     }
