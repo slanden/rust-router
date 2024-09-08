@@ -330,7 +330,6 @@ fn main() {
         Seg::new("QF1XILBcUHnw3qq", "..."),
     ]);
     const r: Router = router!(O, C);
-    println!("{} {}", r.options.len(), r.short_option_mappers.len());
     r.run().unwrap();
     for i in 0..10000 {
         r.run().unwrap();

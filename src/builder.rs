@@ -359,8 +359,8 @@ pub fn default_action(_: Context) -> io::Result<()> {
 macro_rules! router {
     ($opt_enum: ident, $seg: ident) => {{
         // Returns list of options, option mappers, and
-        // *the* names array The names array will be
-        // appended to by commands
+        // *the* names array the other names array will
+        // be appended to by commands
         const _OPS: (
             &[router::Opt],
             &[(u16, char)],
@@ -383,19 +383,23 @@ macro_rules! router {
             .flatten::<{ _CMD_COUNT.0 }, { _CMD_COUNT.1 }, _STR_COUNT>(
                 _OPS.2,
             );
-        Router {
-            tree: &_CMD_PARTS.0,
-            segments: &_CMD_PARTS.1,
-            actions: &_CMD_PARTS.2,
+
+        // ? For some reason, creating the router struct through this
+        // ? function instead of directly uses ~41 more bytes. But,
+        // ? creating directly means exposing private fields
+        Router::from_raw_parts(
+            &_CMD_PARTS.0,
+            &_CMD_PARTS.1,
+            &_CMD_PARTS.2,
             // docs: &_CMD_PARTS.3,
-            opt_group_rules: &_CMD_PARTS.3,
-            opt_groups: &_CMD_PARTS.4,
-            options: &_OPS.0,
-            short_option_mappers: &_OPS.1,
-            names: &_CMD_PARTS.5,
+            &_CMD_PARTS.3,
+            &_CMD_PARTS.4,
+            &_CMD_PARTS.5,
             // summaries: &_CMD_PARTS.7,
-            help_opt_index: _OPS.4,
-        }
+            _OPS.0,
+            _OPS.1,
+            _OPS.4,
+        )
     }};
 }
 

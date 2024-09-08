@@ -158,22 +158,52 @@ pub struct Router {
     // Couldn't use a const `TreePack` because `SIZE` in
     // `const r: Router<SIZE> = router!(O, C);` had to
     // be known by the user
-    pub tree: &'static [TreeNode],
-    pub segments: &'static [Segment],
-    pub actions: &'static [Action],
+    tree: &'static [TreeNode],
+    segments: &'static [Segment],
+    actions: &'static [Action],
     // Bitmask: exclusive, required, and cascades bools
     // The u8s act as `OptGroupRules`, but are stored
     // as u8s to avoid casting at runtime
-    pub opt_group_rules: &'static [u8],
+    opt_group_rules: &'static [u8],
     // List of all commands' groups; the commands themselves
     // hold ranges into this
-    pub opt_groups: &'static [&'static [u16]],
-    pub options: &'static [Opt],
-    pub short_option_mappers: &'static [(u16, char)],
-    pub names: &'static [&'static str],
-    pub help_opt_index: Option<u16>,
+    opt_groups: &'static [&'static [u16]],
+    options: &'static [Opt],
+    short_option_mappers: &'static [(u16, char)],
+    names: &'static [&'static str],
+    help_opt_index: Option<u16>,
 }
 impl Router {
+    #[inline(always)]
+    pub const fn from_raw_parts(
+        tree: &'static [TreeNode],
+        segments: &'static [Segment],
+        actions: &'static [Action],
+        // [router::DocGen; _CMD_COUNT.0],
+        opt_group_rules: &'static [u8],
+        opt_groups: &'static [&[u16]],
+        names: &'static [&str],
+        // [&str; _STR_COUNT],
+        options: &'static [Opt],
+        short_option_mappers: &'static [(u16, char)],
+        // opt_names: &'static [&'static str],
+        // opt_summaries: &'static [&'static str],
+        help_opt_index: Option<u16>,
+    ) -> Self {
+        Self {
+            tree,
+            segments,
+            actions,
+            // docs: &seg_parts.3,
+            opt_group_rules,
+            opt_groups,
+            options,
+            short_option_mappers,
+            names,
+            // summaries: &seg_parts.7,
+            help_opt_index,
+        }
+    }
     #[inline(always)]
     pub fn parse(
         &self,

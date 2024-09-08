@@ -37,13 +37,5 @@ fn main() {
             .action(|_| Ok(println!("I'm printing!"))),
     ]);
     const R: Router = router!(O, C);
-    println!(
-      "opts: {:#?}\nshort opts: {:?}\nsegs: {:#?}\nactions: {:?}\nnames: {:?}",
-      R.options,
-      R.short_option_mappers,
-      R.segments,
-      R.actions,
-      R.names
-    );
     R.run().unwrap();
 }
