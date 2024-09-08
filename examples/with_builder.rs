@@ -15,24 +15,21 @@ optmap!(enum O using [
 ]);
 
 fn main() {
-    const C: Seg = Seg::new("example", "an example program").nest(&[
-        Seg::new("add", "add numbers").action(|_| {
+    const C: Seg = Seg::new("example").nest(&[
+        Seg::new("add").action(|_| {
             //
             Ok(())
         }),
-        Seg::new("divide", "div nums").operands(1).nest(&[Seg::new(
-            "example",
-            "div nums example",
-        )
-        .options(&[OptGroup::anyof(&[O::ValueArg])])
-        .action(|c| {
-            println!(
-                "{:?}\n{:?}\n{:?}",
-                c.option_args, c.saved_args, c.arg_ranges
-            );
-            Ok(())
-        })]),
-        Seg::new("print", "print some things")
+        Seg::new("divide").operands(1).nest(&[Seg::new("example")
+            .options(&[OptGroup::anyof(&[O::ValueArg])])
+            .action(|c| {
+                println!(
+                    "{:?}\n{:?}\n{:?}",
+                    c.option_args, c.saved_args, c.arg_ranges
+                );
+                Ok(())
+            })]),
+        Seg::new("print")
             .operands(1)
             .action(|_| Ok(println!("I'm printing!"))),
     ]);

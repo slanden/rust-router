@@ -13,8 +13,6 @@ use std::{ffi::OsString, io, ops::Range, str::FromStr};
 pub use {builder::*, doc::*, opt_map::optmap};
 
 pub type Action = fn(c: Context) -> io::Result<()>;
-pub type DocGen =
-    fn(c: &Context, doc: doc::DocNodeWithoutSummary) -> DocNode;
 
 pub struct Arg<'a> {
     context: &'a Context<'a>,

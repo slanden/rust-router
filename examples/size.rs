@@ -15,20 +15,15 @@ optmap!(enum O using [
 ]);
 
 fn main() {
-    const C: Seg = Seg::new("example", "an example program").nest(&[
-        Seg::new("add", "add numbers")
-            .action(|_| Ok(()))
-            .operands(u16::MAX),
-        Seg::new("divide", "div nums").nest(&[Seg::new(
-            "example",
-            "div nums example",
-        )
+    const C: Seg = Seg::new("example").nest(&[
+        Seg::new("add").action(|_| Ok(())).operands(u16::MAX),
+        Seg::new("divide").nest(&[Seg::new("example")
         .options(&[OptGroup::anyof(&[O::ValueArg])])
         .action(|c| {
             router::context_size(&c);
             Ok(())
         })]),
-        Seg::new("print", "print some things")
+        Seg::new("print")
             .operands(1)
             .action(|_| Ok(println!("I'm printing!"))),
     ]);

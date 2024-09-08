@@ -26,19 +26,16 @@ pub fn criterion_benchmark(c: &mut Criterion) {
       OptNumber > u32,
       Width > u16,
     ]);
-    const SMALL_C: Seg =
-        Seg::new("example", "an example program").nest(&[
-            Seg::new("add", "add numbers").action(|_| {
-                //
-                Ok(())
-            }),
-            Seg::new("divide", "div nums")
-                .operands(1)
-                .nest(&[Seg::new("example", "div nums example")]),
-            Seg::new("print", "print some things")
-                .operands(1)
-                .action(|_| Ok(println!("I'm printing!"))),
-        ]);
+    const SMALL_C: Seg = Seg::new("example").nest(&[
+        Seg::new("add").action(|_| {
+            //
+            Ok(())
+        }),
+        Seg::new("divide").operands(1).nest(&[Seg::new("example")]),
+        Seg::new("print")
+            .operands(1)
+            .action(|_| Ok(println!("I'm printing!"))),
+    ]);
     pub const SMALL_R: Router = router!(Small_O, SMALL_C);
     let small_args = vec![
         OsString::from_str("value-arg").unwrap(),
@@ -283,108 +280,108 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         srniyhbijfouuxc,
         fyuprxvjzsz7zlg
     ]);
-    const LARGE_C: Seg/* <O> */ = Seg::new("example", "an example program").nest(&[
-      Seg::new("ceW5VGwfWYYvYLK", "...").nest(&[
-          Seg::new("Ojf1uclq5apmSwM", "..."),
-          Seg::new("0QkusbzzsvAxaCg", "..."),
-          Seg::new("CNW3qyguGykclun", "...").nest(&[
-              Seg::new("nx4uTjCJVQKVGbY", "..."),
-              Seg::new("ZC8rqomQ8XIlPKE", "..."),
-              Seg::new("Nr6Ia12fGHFoSZd", "...").nest(&[
-                  Seg::new("8iJG0s8IZNEyd0G", "..."),
-                  Seg::new("hpGVauW8lfrabwc", "..."),
-                  Seg::new("KOrmt4MhO1bKHnI", "..."),
-                  Seg::new("XB6pfJwBWQNw7rM", "..."),
-                  Seg::new("Zh6GH8GK28eZT2F", "..."),
-                  Seg::new("ejvCsv0YiybxT9V", "..."),
-                  Seg::new("RASvTDj67Vlud6L", "..."),
-                  Seg::new("74haeRSRYKH4I2a", "..."),
-                  Seg::new("HvpwGWTmFiQ0xLe", "..."),
-                  Seg::new("Cd72emszDr2NOU7", "..."),
-                  Seg::new("DEH8npzf9PAXOYg", "..."),
-                  Seg::new("zvvcPdbmw0KXiIZ", "..."),
-                  Seg::new("i6ik7dOzq9EUy3R", "..."),
+    const LARGE_C: Seg/* <O> */ = Seg::new("example").nest(&[
+      Seg::new("ceW5VGwfWYYvYLK").nest(&[
+          Seg::new("Ojf1uclq5apmSwM"),
+          Seg::new("0QkusbzzsvAxaCg"),
+          Seg::new("CNW3qyguGykclun").nest(&[
+              Seg::new("nx4uTjCJVQKVGbY"),
+              Seg::new("ZC8rqomQ8XIlPKE"),
+              Seg::new("Nr6Ia12fGHFoSZd").nest(&[
+                  Seg::new("8iJG0s8IZNEyd0G"),
+                  Seg::new("hpGVauW8lfrabwc"),
+                  Seg::new("KOrmt4MhO1bKHnI"),
+                  Seg::new("XB6pfJwBWQNw7rM"),
+                  Seg::new("Zh6GH8GK28eZT2F"),
+                  Seg::new("ejvCsv0YiybxT9V"),
+                  Seg::new("RASvTDj67Vlud6L"),
+                  Seg::new("74haeRSRYKH4I2a"),
+                  Seg::new("HvpwGWTmFiQ0xLe"),
+                  Seg::new("Cd72emszDr2NOU7"),
+                  Seg::new("DEH8npzf9PAXOYg"),
+                  Seg::new("zvvcPdbmw0KXiIZ"),
+                  Seg::new("i6ik7dOzq9EUy3R"),
               ]),
-              Seg::new("rBY6OhfHy0QD1JO", "..."),
-              Seg::new("thGKET7beOfY66j", "..."),
-              Seg::new("AZp05xi7ok1GAdI", "...").nest(&[
-                  Seg::new("rORmacHCNstiTvb", "..."),
-                  Seg::new("7PS998WCYGfAUG5", "..."),
-                  Seg::new("Rk1T4B9lE7AJonc", "..."),
-                  Seg::new("6LjXIVkFBs1surc", "..."),
-                  Seg::new("3fcm8FYKXGvKpEX", "...").nest(&[
-                      Seg::new("9X6SfruJnj10uw9", "..."),
-                      Seg::new("JJqprqpPacEe7bC", "..."),
-                      Seg::new("dnqUXAcZDdWcaVG", "..."),
-                      Seg::new("0UFqHiFiy4oamGd", "..."),
-                      Seg::new("qgXnykW6YC31TSl", "..."),
-                      Seg::new("n7mPtBTNG88uilL", "..."),
-                      Seg::new("wbn7Am2B9s34Kam", "..."),
-                      Seg::new("tbQnYaFsGVJwUcy", "..."),
-                      Seg::new("V4tWTeRogoz3Trc", "..."),
+              Seg::new("rBY6OhfHy0QD1JO"),
+              Seg::new("thGKET7beOfY66j"),
+              Seg::new("AZp05xi7ok1GAdI").nest(&[
+                  Seg::new("rORmacHCNstiTvb"),
+                  Seg::new("7PS998WCYGfAUG5"),
+                  Seg::new("Rk1T4B9lE7AJonc"),
+                  Seg::new("6LjXIVkFBs1surc"),
+                  Seg::new("3fcm8FYKXGvKpEX").nest(&[
+                      Seg::new("9X6SfruJnj10uw9"),
+                      Seg::new("JJqprqpPacEe7bC"),
+                      Seg::new("dnqUXAcZDdWcaVG"),
+                      Seg::new("0UFqHiFiy4oamGd"),
+                      Seg::new("qgXnykW6YC31TSl"),
+                      Seg::new("n7mPtBTNG88uilL"),
+                      Seg::new("wbn7Am2B9s34Kam"),
+                      Seg::new("tbQnYaFsGVJwUcy"),
+                      Seg::new("V4tWTeRogoz3Trc"),
                   ]),
-                  Seg::new("HwVsi8xjSgorPAq", "..."),
-                  Seg::new("klYlnsdA9eIFnSb", "..."),
-                  Seg::new("wuOdI8EDVc8T1Ug", "..."),
-                  Seg::new("g25NU7lRbmsjB03", "..."),
-                  Seg::new("Cqby3r0nO57l5zS", "..."),
-                  Seg::new("R99DQ7nNSIlAoCJ", "..."),
-                  Seg::new("CyLLKqN8RstxpMb", "..."),
-                  Seg::new("6sxcJLTVFIgPnlE", "..."),
+                  Seg::new("HwVsi8xjSgorPAq"),
+                  Seg::new("klYlnsdA9eIFnSb"),
+                  Seg::new("wuOdI8EDVc8T1Ug"),
+                  Seg::new("g25NU7lRbmsjB03"),
+                  Seg::new("Cqby3r0nO57l5zS"),
+                  Seg::new("R99DQ7nNSIlAoCJ"),
+                  Seg::new("CyLLKqN8RstxpMb"),
+                  Seg::new("6sxcJLTVFIgPnlE"),
               ]),
-              Seg::new("ShJmy2WeuSNEYsa", "..."),
-              Seg::new("pDBlHjdohenHNsX", "..."),
-              Seg::new("qgvkpyR2N7WbdV0", "..."),
+              Seg::new("ShJmy2WeuSNEYsa"),
+              Seg::new("pDBlHjdohenHNsX"),
+              Seg::new("qgvkpyR2N7WbdV0"),
           ]),
-          Seg::new("UfuPXBbGdavXZ1Q", "..."),
-          Seg::new("WDQlWxEAnhvWpFz", "..."),
-          Seg::new("hiXPX6Q4dB3BX9n", "..."),
-          Seg::new("z0gAe9PXlXqpQfV", "..."),
-          Seg::new("bc11CLBd7x1IYS4", "..."),
-          Seg::new("JZ3ATwBBf29of0S", "..."),
-          Seg::new("W9TdyzBgb629pyl", "..."),
+          Seg::new("UfuPXBbGdavXZ1Q"),
+          Seg::new("WDQlWxEAnhvWpFz"),
+          Seg::new("hiXPX6Q4dB3BX9n"),
+          Seg::new("z0gAe9PXlXqpQfV"),
+          Seg::new("bc11CLBd7x1IYS4"),
+          Seg::new("JZ3ATwBBf29of0S"),
+          Seg::new("W9TdyzBgb629pyl"),
       ]),
-      Seg::new("XjYQFaKuUVXQEqs", "..."),
-      Seg::new("UFWxl4yUWBq8nbJ", "..."),
-      Seg::new("HQCdq6lnZhV7bdk", "...").action(|_| Ok(())),
-      Seg::new("jNORDpDfjFWcuSq", "...").nest(&[
-          Seg::new("vUl1ym3MO6xDYuq", "..."),
-          Seg::new("8jBMJspIkYjhMUq", "..."),
-          Seg::new("7oX5dxvM5Hc4elW", "..."),
-          Seg::new("RoNvFg3NLohiXO0", "..."),
-          Seg::new("bj3lrE1rAEtiJEY", "..."),
-          Seg::new("XXdRXQvaoqqAcdV", "..."),
-          Seg::new("53C0Fazoaag6YIH", "..."),
-          Seg::new("1GJFcUw2ZgfLtvO", "..."),
-          Seg::new("bpraMIKLXtRINqH", "..."),
-          Seg::new("59gBEyZs1wTyyxk", "..."),
-          Seg::new("WUBOLYKvDIifRVs", "..."),
-          Seg::new("tE9FK0sWSAtEtBs", "..."),
-          Seg::new("EgWtuaxYpXHbLKQ", "..."),
-          Seg::new("Nr0GMJmJ8O41gpE", "..."),
-          Seg::new("R9MuumXZIdY3cSf", "...").nest(&[Seg::new(
-              "g4rW6Uz1wglHEOX",
-              "...",
-          )
-          .nest(&[Seg::new("6wHGG1EGvEgs7p4", "...").nest(&[
-              Seg::new("f7YKUV8iElaWysZ", "...").nest(&[Seg::new(
-                  "cYHTZDar5J3Fr2a",
-                  "...",
-              )
-              .nest(&[Seg::new("nnsC8YglQGgcQMK", "...")])]),
-          ])])]),
-          Seg::new("a5UQgE2HYK6EYME", "..."),
-          Seg::new("ni7sgC5qeQjNSh5", "..."),
-          Seg::new("hCZGL0vYEs53KRf", "..."),
+      Seg::new("XjYQFaKuUVXQEqs"),
+      Seg::new("UFWxl4yUWBq8nbJ"),
+      Seg::new("HQCdq6lnZhV7bdk").action(|_| Ok(())),
+      Seg::new("jNORDpDfjFWcuSq").nest(&[
+          Seg::new("vUl1ym3MO6xDYuq"),
+          Seg::new("8jBMJspIkYjhMUq"),
+          Seg::new("7oX5dxvM5Hc4elW"),
+          Seg::new("RoNvFg3NLohiXO0"),
+          Seg::new("bj3lrE1rAEtiJEY"),
+          Seg::new("XXdRXQvaoqqAcdV"),
+          Seg::new("53C0Fazoaag6YIH"),
+          Seg::new("1GJFcUw2ZgfLtvO"),
+          Seg::new("bpraMIKLXtRINqH"),
+          Seg::new("59gBEyZs1wTyyxk"),
+          Seg::new("WUBOLYKvDIifRVs"),
+          Seg::new("tE9FK0sWSAtEtBs"),
+          Seg::new("EgWtuaxYpXHbLKQ"),
+          Seg::new("Nr0GMJmJ8O41gpE"),
+          Seg::new("R9MuumXZIdY3cSf").nest(&[
+            Seg::new("g4rW6Uz1wglHEOX").nest(&[
+              Seg::new("6wHGG1EGvEgs7p4").nest(&[
+                Seg::new("f7YKUV8iElaWysZ").nest(&[
+                  Seg::new("cYHTZDar5J3Fr2a").nest(&[
+                    Seg::new("nnsC8YglQGgcQMK")
+                  ])
+                ])
+              ])
+            ])
+          ]),
+          Seg::new("a5UQgE2HYK6EYME"),
+          Seg::new("ni7sgC5qeQjNSh5"),
+          Seg::new("hCZGL0vYEs53KRf"),
       ]),
-      Seg::new("PREZc7lWwQnPute", "..."),
-      Seg::new("ROmgsRcBfuefTCB", "...").action(|_| Ok(())),
-      Seg::new("CckrTLdVTlC6iop", "..."),
-      Seg::new("Yii762E0GpV9Ev8", "..."),
-      Seg::new("bnN1MkBa3WPeIjO", "...").action(|_| Ok(())),
-      Seg::new("zDPaw4yaf5qrCDN", "...").action(|_| Ok(())),
-      Seg::new("Yw8Yr3UjyKxyaT3", "..."),
-      Seg::new("QF1XILBcUHnw3qq", "..."),
+      Seg::new("PREZc7lWwQnPute"),
+      Seg::new("ROmgsRcBfuefTCB").action(|_| Ok(())),
+      Seg::new("CckrTLdVTlC6iop"),
+      Seg::new("Yii762E0GpV9Ev8"),
+      Seg::new("bnN1MkBa3WPeIjO").action(|_| Ok(())),
+      Seg::new("zDPaw4yaf5qrCDN").action(|_| Ok(())),
+      Seg::new("Yw8Yr3UjyKxyaT3"),
+      Seg::new("QF1XILBcUHnw3qq"),
   ]);
     const LARGE_R: Router = router!(Large_O, LARGE_C);
     let large_args = vec![

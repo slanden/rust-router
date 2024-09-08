@@ -1,7 +1,5 @@
 use {
-    crate::{
-        doc, Action, Context, DocGen, OptGroupRules, Segment, TreeNode,
-    },
+    crate::{Action, Context, OptGroupRules, Segment, TreeNode},
     std::{io, mem::transmute},
 };
 
@@ -71,22 +69,22 @@ impl OptGroup {
 #[derive(Clone, Copy)]
 pub struct Seg<'a> {
     name: &'static str,
-    summary: &'static str,
+    // summary: &'static str,
     commands: &'a [Seg<'a>],
     opt_groups: &'a [OptGroup],
     action: Action,
-    doc: DocGen,
+    // doc: DocGen,
     operands: u16,
 }
 impl<'a> Seg<'a> {
-    pub const fn new(name: &'static str, summary: &'static str) -> Self {
+    pub const fn new(name: &'static str) -> Self {
         Self {
             name,
-            summary,
+            // summary,
             commands: &[],
             opt_groups: &[],
             action: default_action,
-            doc: doc::empty_doc,
+            // doc: doc::empty_doc,
             // sub_count: 0,
             operands: 0,
         }
@@ -120,11 +118,11 @@ impl<'a> Seg<'a> {
         let mut breadcrumbs = [(
             &Seg {
                 name: "",
-                summary: "",
+                // summary: "",
                 commands: &[],
                 opt_groups: &[],
                 action: default_action,
-                doc: doc::empty_doc,
+                // doc: doc::empty_doc,
                 operands: 0,
             },
             0,
@@ -156,10 +154,10 @@ impl<'a> Seg<'a> {
         }
         (count, groups)
     }
-    const fn doc(mut self, gen_fn: DocGen) -> Self {
-        self.doc = gen_fn;
-        self
-    }
+    // pub const fn doc(mut self, gen_fn: DocGen) -> Self {
+    //     self.doc = gen_fn;
+    //     self
+    // }
     pub const fn flatten<
         const COUNT: usize,
         const GROUP_COUNT: usize,
@@ -197,11 +195,11 @@ impl<'a> Seg<'a> {
         let mut breadcrumbs = [Breadcrumb {
             seg: Seg {
                 name: "",
-                summary: "",
+                // summary: "",
                 commands: &[],
                 opt_groups: &[],
                 action: default_action,
-                doc: doc::empty_doc,
+                // doc: doc::empty_doc,
                 operands: 0,
             },
             child_index: 0,
@@ -422,24 +420,24 @@ mod tests {
     fn should_count_all_tree_segments_and_their_opt_groups() {
         const TEST: Seg = Seg {
             name: "test",
-            summary: "",
+            // summary: "",
             commands: &[],
             opt_groups: &[],
             action: |_| Ok(()),
-            doc: doc::empty_doc,
+            // doc: doc::empty_doc,
             operands: 0,
         };
         const CONFIG: Seg = Seg {
             name: "config",
-            summary: "",
+            // summary: "",
             commands: &[
                 Seg {
                     name: "command",
-                    summary: "",
+                    // summary: "",
                     commands: &[
                         Seg {
                             name: "deep1",
-                            summary: "",
+                            // summary: "",
                             commands: &[],
                             opt_groups: &[
                                 OptGroup {
@@ -456,12 +454,12 @@ mod tests {
                                 },
                             ],
                             action: |_| Ok(()),
-                            doc: doc::empty_doc,
+                            // doc: doc::empty_doc,
                             operands: 0,
                         },
                         Seg {
                             name: "deep2",
-                            summary: "",
+                            // summary: "",
                             commands: &[],
                             opt_groups: &[OptGroup {
                                 options: &[
@@ -471,28 +469,28 @@ mod tests {
                                 rules: OptGroupRules::AnyOf as u8,
                             }],
                             action: |_| Ok(()),
-                            doc: doc::empty_doc,
+                            // doc: doc::empty_doc,
                             operands: 0,
                         },
                     ],
                     opt_groups: &[],
                     action: |_| Ok(()),
-                    doc: doc::empty_doc,
+                    // doc: doc::empty_doc,
                     operands: 0,
                 },
                 Seg {
                     name: "action",
-                    summary: "",
+                    // summary: "",
                     commands: &[],
                     opt_groups: &[],
                     action: |_| Ok(()),
-                    doc: doc::empty_doc,
+                    // doc: doc::empty_doc,
                     operands: 0,
                 },
             ],
             opt_groups: &[],
             action: |_| Ok(()),
-            doc: doc::empty_doc,
+            // doc: doc::empty_doc,
             operands: 0,
         };
         let (size, groups) = TEST
@@ -500,7 +498,7 @@ mod tests {
                 CONFIG,
                 Seg {
                     name: "add",
-                    summary: "",
+                    // summary: "",
                     commands: &[],
                     opt_groups: &[OptGroup {
                         options: &[O::OptionA as u16, O::OptionC as u16],
@@ -508,7 +506,7 @@ mod tests {
                             | OptGroupRules::Required as u8,
                     }],
                     action: |_| Ok(()),
-                    doc: doc::empty_doc,
+                    // doc: doc::empty_doc,
                     operands: 0,
                 },
             ])
@@ -520,24 +518,24 @@ mod tests {
     fn should_encode_a_tree_of_segments_into_a_flat_array() {
         const TEST: Seg = Seg {
             name: "test",
-            summary: "",
+            // summary: "",
             commands: &[],
             opt_groups: &[],
             action: |_| Ok(()),
-            doc: doc::empty_doc,
+            // doc: doc::empty_doc,
             operands: 0,
         };
         const CONFIG: Seg = Seg {
             name: "config",
-            summary: "",
+            // summary: "",
             commands: &[
                 Seg {
                     name: "command",
-                    summary: "",
+                    // summary: "",
                     commands: &[
                         Seg {
                             name: "deep1",
-                            summary: "",
+                            // summary: "",
                             commands: &[],
                             opt_groups: &[
                                 OptGroup {
@@ -554,12 +552,12 @@ mod tests {
                                 },
                             ],
                             action: |_| Ok(()),
-                            doc: doc::empty_doc,
+                            // doc: doc::empty_doc,
                             operands: 0,
                         },
                         Seg {
                             name: "deep2",
-                            summary: "",
+                            // summary: "",
                             commands: &[],
                             opt_groups: &[OptGroup {
                                 options: &[
@@ -569,28 +567,28 @@ mod tests {
                                 rules: OptGroupRules::AnyOf as u8,
                             }],
                             action: |_| Ok(()),
-                            doc: doc::empty_doc,
+                            // doc: doc::empty_doc,
                             operands: 0,
                         },
                     ],
                     opt_groups: &[],
                     action: |_| Ok(()),
-                    doc: doc::empty_doc,
+                    // doc: doc::empty_doc,
                     operands: 0,
                 },
                 Seg {
                     name: "action",
-                    summary: "",
+                    // summary: "",
                     commands: &[],
                     opt_groups: &[],
                     action: |_| Ok(()),
-                    doc: doc::empty_doc,
+                    // doc: doc::empty_doc,
                     operands: 0,
                 },
             ],
             opt_groups: &[],
             action: |_| Ok(()),
-            doc: doc::empty_doc,
+            // doc: doc::empty_doc,
             operands: 0,
         };
         const FLATTENED_FROM_STRUCTS: (
@@ -607,7 +605,7 @@ mod tests {
                 CONFIG,
                 Seg {
                     name: "add",
-                    summary: "",
+                    // summary: "",
                     commands: &[],
                     opt_groups: &[OptGroup {
                         options: &[O::OptionA as u16, O::OptionC as u16],
@@ -615,7 +613,7 @@ mod tests {
                             | OptGroupRules::Required as u8,
                     }],
                     action: |_| Ok(()),
-                    doc: doc::empty_doc,
+                    // doc: doc::empty_doc,
                     operands: 0,
                 },
             ])
@@ -702,11 +700,11 @@ mod tests {
             [&[u16]; 4],
             [&str; 7],
             // [&str; 7],
-        ) = Seg/* ::<O> */::new("test", "")
+        ) = Seg/* ::<O> */::new("test")
             .nest(&[
-                Seg::new("config", "").nest(&[
-                    Seg::new("command", "").nest(&[
-                        Seg::new("deep1", "").options(&[
+                Seg::new("config").nest(&[
+                    Seg::new("command").nest(&[
+                        Seg::new("deep1").options(&[
                             OptGroup {
                                 options: &[O::OptionA as u16],
                                 rules: OptGroupRules::AnyOf as u8,
@@ -720,7 +718,7 @@ mod tests {
                                     | OptGroupRules::Required as u8,
                             },
                         ]),
-                        Seg::new("deep2", "").options(&[OptGroup {
+                        Seg::new("deep2").options(&[OptGroup {
                             options: &[
                                 O::OptionA as u16,
                                 O::OptionB as u16,
@@ -728,9 +726,9 @@ mod tests {
                             rules: OptGroupRules::AnyOf as u8,
                         }]),
                     ]),
-                    Seg::new("action", ""),
+                    Seg::new("action"),
                 ]),
-                Seg::new("add", "").options(&[OptGroup {
+                Seg::new("add").options(&[OptGroup {
                     options: &[O::OptionA as u16, O::OptionC as u16],
                     rules: OptGroupRules::AnyOf as u8
                         | OptGroupRules::Required as u8,
@@ -803,10 +801,10 @@ mod tests {
     }
     #[test]
     fn should_set_segment_operands_to_zero_when_it_has_children() {
-        let parts = Seg::new("path", "")
-            .nest(&[Seg::new("a", "")
+        let parts = Seg::new("path")
+            .nest(&[Seg::new("a")
                 .operands(1)
-                .nest(&[Seg::new("a1", ""), Seg::new("a2", "")])])
+                .nest(&[Seg::new("a1"), Seg::new("a2")])])
             .flatten::<4, 0, 4>(&[]);
         assert_eq!(parts.1[1].operands, 0);
     }

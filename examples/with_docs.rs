@@ -14,15 +14,13 @@ optmap!(enum O using [
 ]);
 
 fn main() {
-    const C: Seg = Seg::new("example", "example summary").nest(&[
-        Seg::new("add", "add summary")
+    const C: Seg = Seg::new("example").nest(&[
+        Seg::new("add")
             .action(|_| Ok(println!("Add some things")))
             .operands(2),
-        Seg::new("divide", "div summary")
-            .action(|_| Ok(println!("Divide two things."))),
+        Seg::new("divide").action(|_| Ok(println!("Divide two things."))),
         // .doc(|_, blocks| blocks.summary("div summary!")),
-        Seg::new("print", "print summary")
-            .action(|_| Ok(println!("I'm printing"))),
+        Seg::new("print").action(|_| Ok(println!("I'm printing"))),
         // .doc(|_, blocks| {
         //     let mut blocks = blocks.summary("Print dat summary");
         //     // blocks
