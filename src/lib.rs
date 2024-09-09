@@ -14,6 +14,7 @@ pub use {builder::*, doc::*, opt_map::optmap};
 
 pub type Action = fn(c: Context) -> io::Result<()>;
 
+/// An option-argument, i.e. the option's value(s)
 pub struct Arg<'a> {
     context: &'a Context<'a>,
     range: Range<u16>,
@@ -30,6 +31,9 @@ impl<'a> Arg<'a> {
     /// the `OsString` argument to `T`. It doesn't use the name
     /// `next` because for single-value options it sounds more
     /// natural.
+    ///
+    /// A key-only option, i.e. it doesn't expect option-
+    /// arguments, returns `Ok(None)`.
     pub fn value<T: FromStr>(&mut self) -> io::Result<Option<T>> {
         if self.range.is_empty() {
             return Ok(None);
@@ -48,22 +52,24 @@ impl<'a> Arg<'a> {
     }
 }
 
+/// The result of parsing arguments
 pub struct Context<'a> {
     /// The selected `Segment`'s operands followed by any
     /// arguments found after a terminator. `operands_end`
-    /// marks the start of any arguments after the terminator
+    /// marks the start of any arguments after the
+    /// terminator
     operands: Vec<OsString>,
     /// Option arguments
-    pub saved_args: Vec<OsString>,
+    saved_args: Vec<OsString>,
     // Index to options and index to either saved_args
     // or arg_ranges if the option kind is `Multiple`
-    pub option_args: Vec<(u16, u16)>,
+    option_args: Vec<(u16, u16)>,
     // For options that expect multiple args.
     // When there are multiple args for an option, they
     // should appear next to each other in `saved_args`
-    pub arg_ranges: Vec<Range<u16>>,
+    arg_ranges: Vec<Range<u16>>,
     // How many times the option was found
-    pub option_occurrences: Vec<u8>,
+    option_occurrences: Vec<u8>,
     pub router: &'a Router,
     pub selected: u16,
     /// Where operands end and args after a terminator begin
@@ -125,6 +131,7 @@ impl<'a> Context<'a> {
 /// Holds data necessary to map a parsed argument to an option
 #[derive(Debug)]
 pub struct Opt {
+    // These only need to be public to allow `optmap!()` to work
     /// An index into the shared list of names
     pub name: u16,
     pub kind: OptArgKind,
@@ -151,6 +158,8 @@ pub enum OptGroupRules {
     Required,
 }
 
+/// The driver of the parser that produces a `Context` from
+/// arguments
 pub struct Router {
     // Decision:
     // Couldn't use a const `TreePack` because `SIZE` in
@@ -172,6 +181,10 @@ pub struct Router {
     help_opt_index: Option<u16>,
 }
 impl Router {
+    /// Manually create a `Router` from parts obtained by
+    /// methods on the options enum and `Seg` builder.
+    ///
+    /// The recommended way to create a `Router` is `router!()`
     #[inline(always)]
     pub const fn from_raw_parts(
         tree: &'static [TreeNode],
@@ -202,6 +215,10 @@ impl Router {
             help_opt_index,
         }
     }
+    /// Parse arbitrary sets of OsStrings, which could be useful
+    /// if you need to programmatically call a command with
+    /// arguments. It's mainly used for testing the parser
+    /// itself.
     #[inline(always)]
     pub fn parse(
         &self,
@@ -209,17 +226,22 @@ impl Router {
     ) -> io::Result<Context> {
         parse_cli_route(self, args)
     }
+    /// Run the parser using the arguments passed to the process,
+    /// without running the action if a command was found.
     #[inline(always)]
     pub fn context(&self) -> io::Result<Context> {
         parse_cli_route(self, std::env::args_os().skip(1))
     }
+    /// Run the parser using the arguments passed to the process,
+    /// and run the action if a command was found
     pub fn run(&self) -> io::Result<()> {
         let c = parse_cli_route(self, std::env::args_os().skip(1))?;
         self.actions[c.selected as usize](c)
     }
 }
 
-/// Things needed at runtime for the segment (summary stored separately)
+/// Holds parser information for the segment (summary stored
+/// separately)
 #[derive(Debug, Clone, Copy)]
 pub struct Segment {
     operands: u16,
@@ -231,11 +253,12 @@ pub struct Segment {
     /// `Router` cannot exceed 8,190.
     ///
     /// Will be 0 if it has no groups
-    pub opt_groups: u16,
+    opt_groups: u16,
     /// An index into the shared list of names
-    pub name: u16,
+    name: u16,
 }
 
+/// Holds structural information for the segment
 #[derive(Clone, Copy)]
 pub struct TreeNode {
     child_span: u16,
@@ -318,6 +341,9 @@ fn add_found_option(
         })
 }
 
+/// Report the estimated size of a `Context` and its
+/// `Router` in bytes
+#[cfg(debug_assertions)]
 pub fn context_size(c: &Context) {
     use core::mem::{size_of, size_of_val};
     assert_eq!(size_of::<(u16, u16)>(), 4);

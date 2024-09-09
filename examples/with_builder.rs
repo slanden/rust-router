@@ -23,10 +23,10 @@ fn main() {
         Seg::new("divide").operands(1).nest(&[Seg::new("example")
             .options(&[OptGroup::anyof(&[O::ValueArg])])
             .action(|c| {
-                println!(
-                    "{:?}\n{:?}\n{:?}",
-                    c.option_args, c.saved_args, c.arg_ranges
-                );
+                // println!(
+                //     "{:?}\n{:?}\n{:?}",
+                //     c.option_args, c.saved_args, c.arg_ranges
+                // );
                 Ok(())
             })]),
         Seg::new("print")

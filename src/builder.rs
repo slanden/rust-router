@@ -66,6 +66,9 @@ impl OptGroup {
 //     }
 // }
 
+/// Represents a segment of your API that can be an action
+/// or a nesting structure to lead to other segments. Think
+/// URLs.
 #[derive(Clone, Copy)]
 pub struct Seg<'a> {
     name: &'static str,
