@@ -5,24 +5,24 @@ An argument parsing library that makes it easy to model your API as a hierarchy.
 A CLI program consists of options and operands. Most programs have a concept of "commands", which are just operands that perform an action. This library structures your program as a tree of "segments", like path segments separated by spaces, where the end of the path represents an action to perform.
 
 ## Goals of 1.0
-[x] Support invalid UTF-8
-[ ] Does it handle, or at least not hinder, the requirements of a CLI application
+- [x] Support invalid UTF-8
+- [ ] Does it handle, or at least not hinder, the requirements of a CLI application
   - Non-interactive programs
   - TUI programs
   - Continuous input
   - Asynchronous programs
   - etc.
-[ ] Flexible documentation output that can be formatted as help text, a shorter "tl;dr" option, a MAN page, Web page output, etc.
+- [ ] Flexible documentation output that can be formatted as help text, a shorter "tl;dr" option, a MAN page, Web page output, etc.
   - The core library needs just enough to facilitate it, while the rest would likely be an add-on
   - It'd be nice if it can use compile-time checking of name references and other things that could get out of sync with code
-[ ] A validation strategy that can handle as many constraints as the program needs
-[ ] Smaller than other options while offering the important features, and perhaps having other features as add-ons
-[ ] Allow programs that can be extended, similar to Cargo
+- [ ] A validation strategy that can handle as many constraints as the program needs
+- [ ] Smaller than other options while offering the important features, and perhaps having other features as add-ons
+- [ ] Allow programs that can be extended, similar to Cargo
   - Might be achieved with *Path Parameters*, but what if people want to override existing commands?
   - How can an extension's documentation interact with the host program?
-[x] Single-hyphon-long-options (optional)
+- [x] Single-hyphon-long-options (optional)
    Allows some old programs to be built with this library without breaking the API. Also, there shouldn't be any implicit style restrictions on parsing
-[x] Support optional '=' separator to Separate options from option-arguments (Optional)... I've never said "option" so many times..
+- [x] Support optional '=' separator to Separate options from option-arguments (Optional)... I've never said "option" so many times..
 
 ## Options
 Options will have a full name prefixed with "--", and can optionally be aliased by a shorthand that's prefixed with "-". These prefixes are parsed out before they're made available to your program.
