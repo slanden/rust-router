@@ -8,6 +8,7 @@
 
 mod builder;
 mod doc;
+mod slim;
 // mod uri;
 use std::{ffi::OsString, io, ops::Range, str::FromStr};
 pub use {builder::*, doc::*, opt_map::optmap};
@@ -119,6 +120,13 @@ impl<'a> Context<'a> {
         arg
     }
     #[inline]
+    pub fn option_occurrences(
+        &self,
+        option: impl Into<usize> + Copy,
+    ) -> u8 {
+        self.option_occurrences[option.into()]
+    }
+    #[inline]
     pub fn path_params(&self) -> &[OsString] {
         &self.operands[..self.path_params as usize]
     }
@@ -177,6 +185,9 @@ pub struct Router {
     opt_groups: &'static [&'static [u16]],
     options: &'static [Opt],
     short_option_mappers: &'static [(u16, char)],
+    // A possible optimization when names can be properly
+    // reused, is to have an index to separate options from
+    // segments so for each type, less needs to be searched
     names: &'static [&'static str],
     help_opt_index: Option<u16>,
 }
@@ -720,17 +731,17 @@ pub fn parse_cli_route(
                     }
                     // Shorts
                     for ch in chars {
-                        if let Some(o) = router
+                        if let Some((o, _)) = router
                             .short_option_mappers
                             .iter()
-                            .position(|(_, mapper)| *mapper == ch)
+                            .find(|(_, mapper)| *mapper == ch)
                         {
-                            if c.option_occurrences[o] == 0 {
+                            if c.option_occurrences[*o as usize] == 0 {
                                 options_found += 1;
                             }
-                            c.option_occurrences[o] += 1;
+                            c.option_occurrences[*o as usize] += 1;
                             if let OptArgKind::KeyOnly =
-                                router.options[o].kind
+                                router.options[*o as usize].kind
                             {
                             } else {
                                 // +2 for '-' + character
@@ -742,8 +753,7 @@ pub fn parse_cli_route(
                                     ));
                                 }
                                 add_found_option(
-                                    router.short_option_mappers[o].0
-                                        as usize,
+                                    *o as usize,
                                     router.options,
                                     &mut c,
                                     args.next(),
@@ -823,7 +833,7 @@ pub fn parse_cli_route(
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidInput,
                             format!(
-                              "These options are mutually exclusive: {}, {}",
+                                "These options are mutually exclusive: {}, {}",
                                 router.names[router.options[found as usize].name as usize],
                                 router.names[router.options[*o as usize].name as usize]
                             )

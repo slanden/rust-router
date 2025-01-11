@@ -66,6 +66,8 @@ fn to_case(ident: &str, case: &NameCase) -> String {
 ///   Variant1,
 ///   // A variant with a short alias
 ///   Variant2 | 'a',
+///   // A shorthand-only variant
+///   'Q'
 ///   // A variant that expects one argument (Must be `String`)
 ///   Variant3 > String,
 ///   // A variant that expects one or more arguments (Must be `String`)
@@ -245,7 +247,29 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                     opt_variants[variant].3.push_str("\"]");
                     opt_variants[variant].1 = doc.to_owned();
                     doc.clear();
-                } else {
+                }
+            }
+            TokenTree::Literal(lit) => {
+                let chars = lit.to_string();
+                let mut chars = chars.chars();
+                if chars.next().unwrap() != '\'' {
+                    panic!("Expected a `char`");
+                }
+                let c = chars.next().unwrap();
+
+                // TODO: Enable through a Posix feature only
+                if !c.is_alphanumeric() {
+                    panic!("An Option's short alias must be an alphanumeric character from the portable character set.");
+                }
+                opt_variants[variant].4 = Some(c);
+
+                opt_variants[variant].0 = c.to_string();
+                if !doc.is_empty() {
+                    opt_variants[variant].3.push_str("#[doc=\"");
+                    opt_variants[variant].3.push_str(&doc);
+                    opt_variants[variant].3.push_str("\"]");
+                    opt_variants[variant].1 = doc.to_owned();
+                    doc.clear();
                 }
             }
             _ => {}
@@ -268,27 +292,30 @@ pub fn optmap(input: TokenStream) -> TokenStream {
                     continue;
                 }
                 '|' => {
+                    if opt_variants[variant].4.is_some() {
+                        panic!("Already gave an option shorthand")
+                    }
                     // Add short to variant
                     match input
-                 .next()
-                 .expect("Missing short alias. If this was intentional, remove the '|'.")
-             {
-                 TokenTree::Literal(lit) => {
-                     let chars = lit.to_string();
-                     let mut chars = chars.chars();
-                     if chars.next().unwrap() != '\'' {
-                      panic!("Expected a `char`");
-                    }
-                    let c = chars.next().unwrap();
+                        .next()
+                        .expect("Missing short alias. If this was intentional, remove the '|'.")
+                    {
+                        TokenTree::Literal(lit) => {
+                            let chars = lit.to_string();
+                            let mut chars = chars.chars();
+                            if chars.next().unwrap() != '\'' {
+                                panic!("Expected a `char`");
+                            }
+                            let c = chars.next().unwrap();
 
-                     // TODO: Enable through a Posix feature only
-                     if !c.is_alphanumeric() {
-                         panic!("An Option's short alias must be an alphanumeric character from the portable character set.");
-                     }
-                     opt_variants[variant].4 = Some(c);
-                 }
-                 _ => panic!("Expected a `char`."),
-             };
+                            // TODO: Enable through a Posix feature only
+                            if !c.is_alphanumeric() {
+                                panic!("An Option's short alias must be an alphanumeric character from the portable character set.");
+                            }
+                            opt_variants[variant].4 = Some(c);
+                        }
+                        _ => panic!("Expected a `char`."),
+                    };
                 }
                 '>' => {
                     // Add value to variant

@@ -20,7 +20,7 @@ A CLI program consists of options and operands. Most programs have a concept of 
 - [ ] Allow programs that can be extended, similar to Cargo
   - Might be achieved with *Path Parameters*, but what if people want to override existing commands?
   - How can an extension's documentation interact with the host program?
-- [x] Single-hyphon-long-options (optional)
+- [x] Single-hyphen-long-options (optional)
    Allows some old programs to be built with this library without breaking the API. Also, there shouldn't be any implicit style restrictions on parsing
 - [x] Support optional '=' separator to Separate options from option-arguments (Optional)... I've never said "option" so many times..
 
